@@ -72,12 +72,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "generate_screening_questions_tool",
-            "description": "Generate 2-3 targeted screening questions for a candidate-job pair based on skill gaps.",
+            "description": "Generate adaptive screening questions. Pass match_tier to control count: STRONG_MATCH=1-2, PARTIAL_MATCH=2-3, WEAK_MATCH=3-4 questions.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "candidate_id": {"type": "string", "description": "The candidate's unique identifier."},
                     "job_id": {"type": "string", "description": "The job's unique identifier."},
+                    "match_tier": {"type": "string", "description": "Match tier from match_jobs_tool results. Controls question count.", "enum": ["STRONG_MATCH", "PARTIAL_MATCH", "WEAK_MATCH"], "default": "PARTIAL_MATCH"},
                 },
                 "required": ["candidate_id", "job_id"],
             },

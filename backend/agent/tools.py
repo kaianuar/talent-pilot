@@ -27,6 +27,13 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
+# How many questions to generate per tier
+TIER_QUESTION_COUNT = {
+    "STRONG_MATCH": 2,
+    "PARTIAL_MATCH": 3,
+    "WEAK_MATCH": 4,
+}
+
 
 def parse_resume_tool(pdf_path: str) -> str:
     """Parse a CV/resume PDF file and extract structured candidate information.
@@ -89,25 +96,38 @@ def match_jobs_tool(candidate_id: str) -> str:
     } for r in results], indent=2)
 
 
-def generate_screening_questions_tool(candidate_id: str, job_id: str) -> str:
+def generate_screening_questions_tool(candidate_id: str, job_id: str, match_tier: str = "PARTIAL_MATCH") -> str:
     """Generate targeted screening questions for a candidate-job pair.
+    The number of questions adapts to the match tier: STRONG_MATCH gets 1-2, PARTIAL_MATCH gets 2-3, WEAK_MATCH gets 3-4.
 
     Args:
         candidate_id: The candidate's unique identifier.
         job_id: The job's unique identifier.
+        match_tier: The match tier (STRONG_MATCH, PARTIAL_MATCH, or WEAK_MATCH) to control question count.
 
     Returns:
-        JSON array of 2-3 screening question strings.
+        JSON object with 'questions' (list), 'tier', and 'focus_areas' (list).
     """
     parsed = get_parsed_resume(candidate_id)
     job = get_job(job_id)
     if not parsed or not job:
         return json.dumps({"error": "Candidate or job not found."})
 
+    num_questions = TIER_QUESTION_COUNT.get(match_tier, 3)
+
     if not QWEN_API_KEY:
-        return json.dumps(["Tell me about your experience with the required technologies.",
-                           "Describe a project where you used the key skills for this role.",
-                           "How many years of production experience do you have?"])
+        # Fallback questions
+        fallback = [
+            "Tell me about your experience with the key technologies for this role.",
+            "Describe a recent project where you used the primary tech stack.",
+            "How many years of production experience do you have with the core tools?",
+            "What interests you about this specific position?",
+        ]
+        return json.dumps({
+            "questions": fallback[:num_questions],
+            "tier": match_tier,
+            "focus_areas": ["general fit"],
+        }, indent=2)
 
     client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
     try:
@@ -118,27 +138,52 @@ def generate_screening_questions_tool(candidate_id: str, job_id: str) -> str:
             r = results[0]
             gap_info = f"\nMatch score: {r.score} ({r.tier.value}). Missing skills: {r.missing_skills}. Reasoning: {r.reasoning_explanation}"
 
+        prompt = f"""Generate exactly {num_questions} screening questions for this candidate-job pair.
+Match tier: {match_tier} (target {num_questions} questions).
+
+CANDIDATE:
+{json.dumps(parsed, indent=2)}
+
+JOB:
+{json.dumps(job, indent=2)}{gap_info}
+
+Return as JSON: {{"questions": ["q1", "q2", ...], "tier": "{match_tier}", "focus_areas": ["area1", "area2"]}}"""
+
         response = client.chat.completions.create(
             model=MODEL_REASONING,
             messages=[
                 {"role": "system", "content": SCREENING_QUESTION_PROMPT},
-                {"role": "user", "content": f"CANDIDATE:\n{json.dumps(parsed, indent=2)}\n\nJOB:\n{json.dumps(job, indent=2)}{gap_info}\n\nGenerate 2-3 screening questions."},
+                {"role": "user", "content": prompt},
             ],
             temperature=0.3,
-            max_tokens=500,
+            max_tokens=800,
         )
         raw = response.choices[0].message.content.strip()
         if raw.startswith("```"):
             import re
             raw = re.sub(r"^```(?:json)?\s*\n?", "", raw)
             raw = re.sub(r"\n?```\s*$", "", raw)
-        questions = json.loads(raw)
-        return json.dumps(questions, indent=2)
+        data = json.loads(raw)
+        # Ensure correct structure
+        if isinstance(data, list):
+            data = {"questions": data, "tier": match_tier, "focus_areas": []}
+        data.setdefault("questions", [])
+        data.setdefault("tier", match_tier)
+        data.setdefault("focus_areas", [])
+        return json.dumps(data, indent=2)
     except Exception as e:
         logger.warning("Failed to generate screening questions: %s", e)
-        return json.dumps(["Tell me about your experience with the required technologies.",
-                           "Describe a project where you used the key skills for this role.",
-                           "How many years of production experience do you have?"])
+        fallback = [
+            "Tell me about your experience with the key technologies for this role.",
+            "Describe a recent project where you used the primary tech stack.",
+            "How many years of production experience do you have?",
+            "What interests you about this position?",
+        ]
+        return json.dumps({
+            "questions": fallback[:num_questions],
+            "tier": match_tier,
+            "focus_areas": ["general fit"],
+        }, indent=2)
 
 
 def confirm_and_draft_email_tool(candidate_id: str, job_id: str, screening_answers: dict) -> str:

@@ -163,8 +163,10 @@ def test_generate_screening_questions(MockOpenAI, sample_candidate):
     # With no API key in the mock, it should return fallback questions
     with patch("backend.agent.tools.QWEN_API_KEY", ""):
         result = json.loads(generate_screening_questions_tool(sample_candidate["id"], jobs[0]["id"]))
-    assert isinstance(result, list)
-    assert len(result) >= 2
+    assert isinstance(result, dict)
+    assert "questions" in result
+    assert len(result["questions"]) >= 2
+    assert "tier" in result
 
 
 @patch("backend.agent.orchestrator.OpenAI")
