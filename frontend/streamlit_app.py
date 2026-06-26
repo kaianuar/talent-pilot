@@ -12,7 +12,7 @@ st.caption("Upload your CV, find matching jobs, and apply with one click.")
 
 
 # --- Fetch service status ---
-@st.cache_data(ttl=30)
+# No caching — status check is fast and avoids stale cache popups
 def get_service_status():
     """Check backend service configuration status."""
     try:
