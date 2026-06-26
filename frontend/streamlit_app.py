@@ -187,7 +187,7 @@ if uploaded_file and st.session_state.candidate_id is None:
         if resp.status_code == 200:
             data = resp.json()
             st.session_state.candidate_id = data["candidate_id"]
-            st.session_state.pdf_path = data["pdf_path"]
+            # pdf_path not needed after upload — CV already parsed on server
             st.session_state.uploaded_filename = uploaded_file.name
             parsed = data["parsed"]
             st.success(f"✅ CV parsed: {parsed.get('name', 'Unknown')} — {len(parsed.get('skills', []))} skills found, {parsed.get('years_experience', 0)} years experience")
