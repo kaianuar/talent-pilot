@@ -2,6 +2,13 @@
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Auto-load .env file from project root
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
+from pathlib import Path
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

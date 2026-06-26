@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 # Use a temp DB for tests
-os.environ["QWEN_API_KEY"] = "test-key-not-real"
+# QWEN_API_KEY loaded from .env via dotenv in config.py
 
 from backend.db import init_db, seed_from_json, get_session
 from backend.models.job import Job
