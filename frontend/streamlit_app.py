@@ -11,6 +11,39 @@ st.title("🎯 TalentPilot — AI Recruiter Assistant")
 st.caption("Upload your CV, find matching jobs, and apply with one click.")
 
 
+# --- Fetch service status ---
+@st.cache_data(ttl=30)
+def get_service_status():
+    """Check backend service configuration status."""
+    try:
+        resp = requests.get(f"{API_BASE}/status", timeout=3)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return {"api_key_configured": False, "smtp_configured": False, "version": "unknown"}
+
+
+status = get_service_status()
+
+# Show configuration warnings
+if not status.get("api_key_configured"):
+    st.warning(
+        "⚠️ **Qwen API key not configured.** CV parsing and matching will not work. "
+        "Set `QWEN_API_KEY` in your environment. "
+        "See [specs/qwen-cloud-api.md](specs/qwen-cloud-api.md) for setup instructions."
+    )
+
+if not status.get("smtp_configured"):
+    st.info(
+        "ℹ️ **Email sending is not configured.** You can still complete the full workflow "
+        "(upload CV → match jobs → screening questions → draft email), but the final "
+        "'Send to Recruiter' step will show a preview instead of actually sending. "
+        "To enable real email delivery, set `ALIYUN_SMTP_USER` and `ALIYUN_SMTP_PASS`. "
+        "See [specs/email-service.md](specs/email-service.md) for setup instructions."
+    )
+
+
 # --- Session state defaults ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -45,9 +78,7 @@ def send_chat(message: str):
 
             # Try to detect email draft in the response
             try:
-                # Check if the assistant text contains an email draft
                 if "subject" in assistant_text and "body" in assistant_text and "to" in assistant_text:
-                    # Try to extract JSON from the response
                     import re
                     json_match = re.search(r'\{[^{}]*"to"[^{}]*"subject"[^{}]*"body"[^{}]*\}', assistant_text, re.DOTALL)
                     if json_match:
@@ -99,25 +130,32 @@ with st.sidebar:
         st.write(f"**To:** {draft.get('to', 'N/A')}")
         st.write(f"**Subject:** {draft.get('subject', 'N/A')}")
         st.text_area("Body", draft.get("body", ""), height=200, disabled=True)
-        if st.button("📤 Send to Recruiter", type="primary"):
-            st.session_state.send_confirmed = True
-            # Send the application
-            with st.spinner("Sending email..."):
-                resp = requests.post(f"{API_BASE}/applications", json={
-                    "candidate_id": st.session_state.candidate_id,
-                    "job_id": next((m["job_id"] for m in st.session_state.matches if m.get("score", 0) == max(mm.get("score", 0) for mm in st.session_state.matches)), ""),
-                    "draft": draft,
-                    "send_confirmed": True,
-                })
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("status") == "sent":
-                        st.success(f"✅ Email sent! Message ID: {data.get('message_id', 'N/A')}")
-                        st.session_state.email_draft = None
+
+        smtp_configured = status.get("smtp_configured", False)
+
+        if smtp_configured:
+            if st.button("📤 Send to Recruiter", type="primary"):
+                st.session_state.send_confirmed = True
+                with st.spinner("Sending email..."):
+                    resp = requests.post(f"{API_BASE}/applications", json={
+                        "candidate_id": st.session_state.candidate_id,
+                        "job_id": next((m["job_id"] for m in st.session_state.matches if m.get("score", 0) == max(mm.get("score", 0) for mm in st.session_state.matches)), ""),
+                        "draft": draft,
+                        "send_confirmed": True,
+                    })
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("status") == "sent":
+                            st.success(f"✅ Email sent! Message ID: {data.get('message_id', 'N/A')}")
+                            st.session_state.email_draft = None
+                        else:
+                            st.error(f"Failed to send: {data.get('error', 'Unknown error')}")
                     else:
-                        st.error(f"Failed to send: {data.get('error', 'Unknown error')}")
-                else:
-                    st.error(f"Error: {resp.status_code}")
+                        st.error(f"Error: {resp.status_code}")
+        else:
+            st.button("📤 Send to Recruiter", type="primary", disabled=True)
+            st.caption("📧 Email sending is not configured. Set ALIYUN_SMTP_USER and ALIYUN_SMTP_PASS to enable.")
+            st.success("✅ Email draft generated successfully! The workflow up to this point is fully functional.")
     else:
         st.info("No email draft yet. Complete the screening process to generate one.")
 
@@ -131,7 +169,7 @@ with st.sidebar:
         if resp.status_code == 200:
             entries = resp.json()
             for entry in entries[:10]:
-                status_icon = "✅" if entry.get("status") == "ok" or entry.get("status") == "sent" else "❌"
+                status_icon = "✅" if entry.get("status") in ("ok", "sent") else ("⏭️" if entry.get("status") == "skipped" else "❌")
                 st.caption(f"{status_icon} {entry.get('action', '')} — {entry.get('timestamp', '')[:19]}")
     except Exception:
         st.caption("Could not load audit log.")

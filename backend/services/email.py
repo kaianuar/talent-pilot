@@ -47,7 +47,16 @@ def send_email(
         EmailSendError: If sending fails after retries.
     """
     if not SMTP_USER or not SMTP_PASS:
-        raise EmailSendError("SMTP credentials not configured. Set ALIYUN_SMTP_USER and ALIYUN_SMTP_PASS.")
+        log_audit(
+            action="email_not_configured",
+            candidate_id=candidate_id,
+            details={"to": to, "subject": subject, "reason": "SMTP credentials not set"},
+            status="skipped",
+        )
+        raise EmailSendError(
+            "Email service not configured. To enable email sending, set ALIYUN_SMTP_USER "
+            "and ALIYUN_SMTP_PASS in your environment. See specs/email-service.md for setup instructions."
+        )
 
     msg = MIMEMultipart()
     msg["From"] = SMTP_SENDER

@@ -26,7 +26,7 @@ from backend.services import (
 from backend.services.resume_parser import parse_resume, ResumeParseError
 from backend.services.email import send_email, EmailSendError
 from backend.agent.orchestrator import run_turn
-from backend.config import API_HOST, API_PORT
+from backend.config import API_HOST, API_PORT, SMTP_USER, SMTP_PASS, QWEN_API_KEY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -87,6 +87,15 @@ class ApplicationResponse(BaseModel):
 
 
 # --- Endpoints ---
+
+@app.get("/status")
+async def get_status():
+    """Return service configuration status."""
+    return {
+        "api_key_configured": bool(QWEN_API_KEY),
+        "smtp_configured": bool(SMTP_USER and SMTP_PASS),
+        "version": "1.0.0",
+    }
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_cv(file: UploadFile = File(...)):
