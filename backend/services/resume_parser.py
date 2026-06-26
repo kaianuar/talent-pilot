@@ -3,7 +3,7 @@
 Strategy:
 1. Try text extraction from PDF (fast, lossless for text-based PDFs)
 2. If text extraction yields enough content, use qwen3-max (text model) to parse it
-3. If text extraction fails (scanned PDF, image-only), convert to images and use Qwen3-VL-Plus
+3. If text extraction fails (scanned PDF, image-only), fall back to vision model with image conversion
 """
 
 import base64
@@ -25,12 +25,13 @@ SYSTEM_PROMPT = """You are a resume/CV parser. Extract the following from the do
 - name: full name
 - email: email address
 - phone: phone number (international format if possible)
-- skills: array of {name, years, category} where category is one of: language, framework, tool, database, cloud, platform, skill
-- experiences: array of {company, role, start (YYYY-MM), end (YYYY-MM or null if current), summary (1 sentence)}
+- skills: array of {name, years, category} where category is one of: language, framework, tool, database, cloud, platform, skill. Limit to the 15 most relevant skills.
+- experiences: array of {company, role, start (YYYY-MM), end (YYYY-MM or null if current), summary (1 sentence)}. Limit to the 5 most recent.
 - education: array of {institution, degree, year}
 - years_experience: total professional years as integer
 
 Infer implicit skills from experience descriptions (e.g. "built REST APIs" implies "REST" and "API Design").
+Be concise — return only the most relevant items, not exhaustive lists.
 Return ONLY a valid JSON object, no markdown fences, no commentary."""
 
 # Minimum characters to consider text extraction successful
@@ -45,12 +46,92 @@ class ResumeParseError(Exception):
 
 
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response, stripping markdown fences if present."""
+    """Extract JSON from LLM response, stripping markdown fences if present.
+    Attempts repair if JSON is truncated (missing closing braces/brackets).
+    """
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*\n?", "", text)
         text = re.sub(r"\n?```\s*$", "", text)
-    return json.loads(text)
+
+    # Try parsing as-is
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt repair: find the last complete key-value pair and close the structure
+    repaired = _repair_truncated_json(text)
+    if repaired:
+        return repaired
+
+    raise json.JSONDecodeError("Could not parse JSON", text, 0)
+
+
+def _repair_truncated_json(text: str) -> dict | None:
+    """Attempt to repair a truncated JSON response by closing open braces/brackets."""
+    # Strategy: truncate at the last complete value (ends with } or ] or ",)
+    # then close all open structures
+
+    # Find the last position where we have a complete value
+    # Look for the last occurrence of a closing quote followed by optional comma
+    last_good = -1
+    for i in range(len(text) - 1, -1, -1):
+        if text[i] in ('}', ']'):
+            last_good = i + 1
+            break
+        if text[i] == '"' and i > 0:
+            # Check if this is a closing quote (not preceded by \)
+            if text[i-1] != '\\':
+                # Check what follows — should be , or : or } or ]
+                rest = text[i+1:].strip()
+                if rest == '' or rest.startswith(',') or rest.startswith(':') or rest.startswith('}') or rest.startswith(']'):
+                    last_good = i + 1
+                    break
+
+    if last_good <= 0:
+        return None
+
+    truncated = text[:last_good]
+
+    # Count open braces and brackets
+    open_braces = 0
+    open_brackets = 0
+    in_string = False
+    escape_next = False
+
+    for ch in truncated:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\':
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            open_braces += 1
+        elif ch == '}':
+            open_braces -= 1
+        elif ch == '[':
+            open_brackets += 1
+        elif ch == ']':
+            open_brackets -= 1
+
+    # Remove trailing comma if present
+    repaired = truncated.rstrip().rstrip(',')
+
+    # Close open arrays and objects
+    repaired += ']' * open_brackets
+    repaired += '}' * open_braces
+
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        return None
 
 
 def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -93,7 +174,7 @@ def _parse_with_text_model(text_content: str) -> dict:
         model=MODEL_REASONING,
         messages=messages,
         temperature=0.1,
-        max_tokens=2000,
+        max_tokens=4000,
     )
     raw = response.choices[0].message.content
     data = _extract_json(raw)
@@ -125,7 +206,7 @@ def _parse_with_vision_model(pdf_bytes: bytes) -> dict:
         model=MODEL_VISION,
         messages=messages,
         temperature=0.1,
-        max_tokens=2000,
+        max_tokens=4000,
     )
     raw = response.choices[0].message.content
     data = _extract_json(raw)
