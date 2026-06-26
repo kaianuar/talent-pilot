@@ -1,0 +1,38 @@
+Jessica Chen
+Senior Full Stack Engineer
+Email: jessica.chen@talentbridge.com | Phone: +65-9123-4567 | Singapore
+
+SUMMARY
+Experienced full stack engineer with 6+ years building scalable web applications. Expertise in Python, FastAPI, React, and cloud infrastructure on AWS. Passionate about clean architecture and developer experience.
+
+SKILLS
+- Python (5 years), JavaScript/TypeScript (4 years), SQL (5 years)
+- FastAPI (3 years), React (3 years), Next.js (2 years)
+- PostgreSQL (4 years), Redis (2 years), MongoDB (2 years)
+- AWS (3 years), Docker (3 years), Kubernetes (2 years)
+- Git, CI/CD, Terraform, Linux
+
+EXPERIENCE
+
+Senior Backend Engineer | TechCorp Solutions | Mar 2021 - Jan 2026
+- Built microservices architecture serving 2M daily active users using FastAPI and PostgreSQL
+- Led migration from monolithic Django app to FastAPI-based microservices
+- Implemented CI/CD pipelines with GitHub Actions and Docker
+- Mentored team of 4 junior engineers
+
+Backend Developer | StartupXYZ | Jun 2019 - Feb 2021
+- Developed REST APIs and data processing pipelines in Python
+- Optimized database queries reducing response time by 60%
+- Built real-time notification system using WebSockets and Redis
+
+Junior Developer | WebAgency | Jan 2018 - May 2019
+- Built client websites using React and Node.js
+- Maintained legacy PHP applications
+- Automated deployment workflows with Bash scripts
+
+EDUCATION
+BSc Computer Science | National University of Singapore | 2018
+
+CERTIFICATIONS
+- AWS Solutions Architect Associate
+- Google Cloud Professional Data Engineer

@@ -1,0 +1,50 @@
+graph TB
+    subgraph "Candidate Browser"
+        UI[Streamlit Chat UI]
+    end
+
+    subgraph "Alibaba Cloud - Singapore"
+        subgraph "Function Compute"
+            NGINX[Nginx Reverse Proxy<br/>:9000]
+            API[FastAPI Backend<br/>:8000]
+            FE[Streamlit Frontend<br/>:8501]
+        end
+
+        subgraph "Qwen Cloud (DashScope)"
+            VL[Qwen3-VL-Plus<br/>CV Parsing]
+            MAX[qwen3-max<br/>Matching & Reasoning]
+        end
+
+        subgraph "Services"
+            MATCH[Matching Engine<br/>Composite Scoring]
+            EMAIL[Email Service<br/>Alibaba DirectMail]
+            DB[(SQLite DB<br/>Jobs, Candidates, Audit)]
+        end
+    end
+
+    UI -->|HTTPS| NGINX
+    NGINX -->|/api/*| API
+    NGINX -->|/| FE
+    FE -->|REST| API
+
+    API -->|Upload CV| VL
+    API -->|Score Fit| MAX
+    API -->|Generate Questions| MAX
+    API -->|Draft Email| MAX
+
+    API -->|rank_matches| MATCH
+    MATCH -->|required_coverage| DB
+    MATCH -->|adjacent_bonus| DB
+    MATCH -->|reasoning_score| MAX
+
+    API -->|send_email| EMAIL
+    EMAIL -->|SMTP| DM[DirectMail SMTP<br/>smtpdm.aliyun.com]
+
+    API -->|CRUD| DB
+
+    style UI fill:#e1f5fe
+    style VL fill:#fff3e0
+    style MAX fill:#fff3e0
+    style EMAIL fill:#e8f5e9
+    style DB fill:#fce4ec
+    style DM fill:#e8f5e9
