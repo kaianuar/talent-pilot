@@ -3,6 +3,18 @@
 import json
 import requests
 import streamlit as st
+import time
+from typing import Optional
+
+# Import progress indicators
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from components.progress_indicators import (
+    ProgressTracker,
+    FileUploadProgress,
+    with_progress,
+)
 
 API_BASE = "http://localhost:9000"
 
