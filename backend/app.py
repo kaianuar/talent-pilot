@@ -25,7 +25,8 @@ from backend.services import (
 )
 from backend.services.resume_parser import parse_resume, ResumeParseError
 from backend.services.email import send_email, EmailSendError
-from backend.agent.orchestrator import run_turn
+# NOTE: Old agent orchestrator removed - now using hexagonal architecture
+# from backend.agent.orchestrator import run_turn
 from backend.config import API_HOST, API_PORT, SMTP_USER, SMTP_PASS, QWEN_API_KEY
 
 logging.basicConfig(level=logging.INFO)
@@ -136,28 +137,28 @@ async def upload_cv(file: UploadFile = File(...)):
     return UploadResponse(candidate_id=candidate["id"], parsed=parsed, pdf_path=str(pdf_path))
 
 
+# NOTE: /chat endpoint temporarily disabled - migrating to new hexagonal architecture
+# The new implementation will use:
+# - backend.application.services.screening_orchestrator
+# - backend.infrastructure.orchestration.graph_builder
+# - LangGraph for workflow orchestration
+
+# @app.post("/chat", response_model=ChatResponse)
+# async def chat(req: ChatRequest):
+#     """Run one conversation turn through the agent."""
+#     # TODO: Implement using new hexagonal architecture
+#     raise HTTPException(501, "Chat endpoint being migrated to new architecture")
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    """Run one conversation turn through the agent."""
-    try:
-        updated_messages, assistant_text = run_turn(
-            messages=req.messages,
-            candidate_id=req.candidate_id,
-            pdf_path=req.pdf_path,
-            send_confirmed=req.send_confirmed,
-        )
-    except Exception as e:
-        logger.exception("Chat turn failed")
-        log_audit(action="chat_error", candidate_id=req.candidate_id, details={"error": str(e)}, status="failed")
-        raise HTTPException(500, f"Agent error: {e}")
-
-    log_audit(
-        action="chat_turn",
-        candidate_id=req.candidate_id,
-        details={"user_message": req.messages[-1]["content"] if req.messages else "", "assistant_preview": assistant_text[:200]},
+    """Run one conversation turn through the agent. (MIGRATING - Limited functionality)"""
+    # TODO: Full implementation using new hexagonal architecture
+    # For now, return a placeholder response
+    return ChatResponse(
+        messages=req.messages + [{"role": "assistant", "content": "[System migrating to new architecture. Chat functionality temporarily limited.]"}],
+        assistant_text="[System migrating to new architecture. Chat functionality temporarily limited.]"
     )
-
-    return ChatResponse(messages=updated_messages, assistant_text=assistant_text)
 
 
 @app.get("/jobs")
