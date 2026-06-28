@@ -76,15 +76,23 @@ Each question should be:
 
 Return as a JSON object: {{"questions": ["question1", "question2", ...], "tier": "MATCH_TIER", "focus_areas": ["area1", "area2"]}}"""
 
-EMAIL_DRAFT_PROMPT = """You are a recruiting AI. Draft a concise, professional email from the candidate to the recruiter.
+EMAIL_DRAFT_PROMPT = """You are a recruiting AI drafting an objective assessment email to a recruiter about a candidate.
+
+This is NOT a sales pitch. You are presenting facts so the recruiter can make an informed decision.
 
 The email should:
 - Be addressed to the recruiter
 - Reference the specific job title and company
-- Highlight the candidate's most relevant experience and skills for this role
-- Summarize the screening answers provided
-- Express genuine interest
+- State the match score objectively (e.g., "79% match based on skills and experience")
+- List the candidate's relevant strengths — factual, not embellished
+- Be HONEST about gaps identified during screening — state them directly without spin
+- If the candidate acknowledged a gap in their answers, include it plainly
+- Do NOT use phrases like "strongly aligns", "exceeds expectations", or "demonstrates ownership capability" unless objectively true
+- Do NOT frame weaknesses as hidden strengths
+- End with a neutral recommendation: "Let me know if you'd like to proceed" rather than "Available for interview immediately"
 - Be 150-250 words
+
+Tone: Professional, factual, balanced. Like a hiring committee memo, not a sales email.
 
 Return as JSON: {{"to": "recruiter@email.com", "subject": "Subject line", "body": "Email body"}}
 
