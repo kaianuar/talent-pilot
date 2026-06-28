@@ -26,22 +26,19 @@ def get_service_status():
 
 status = get_service_status()
 
-# Show configuration warnings
-if not status.get("api_key_configured"):
-    st.warning(
-        "⚠️ **Qwen API key not configured.** CV parsing and matching will not work. "
-        "Set `QWEN_API_KEY` in your environment. "
-        "See [specs/qwen-cloud-api.md](specs/qwen-cloud-api.md) for setup instructions."
-    )
+# Subtle status indicators (not warnings) — show demo mode when not fully configured
+api_ready = status.get("api_key_configured", False)
+smtp_ready = status.get("smtp_configured", False)
 
-if not status.get("smtp_configured"):
-    st.info(
-        "ℹ️ **Email sending is not configured.** You can still complete the full workflow "
-        "(upload CV → match jobs → screening questions → draft email), but the final "
-        "'Send to Recruiter' step will show a preview instead of actually sending. "
-        "To enable real email delivery, set `ALIYUN_SMTP_USER` and `ALIYUN_SMTP_PASS`. "
-        "See [specs/email-service.md](specs/email-service.md) for setup instructions."
-    )
+if not api_ready or not smtp_ready:
+    cols = st.columns([1, 1, 3])
+    with cols[0]:
+        st.caption(f"{'🟢' if api_ready else '🔴'} AI: {'Live' if api_ready else 'Demo'}")
+    with cols[1]:
+        st.caption(f"{'🟢' if smtp_ready else '🔴'} Email: {'Active' if smtp_ready else 'Preview'}")
+    with cols[2]:
+        if not api_ready:
+            st.caption("Set `QWEN_API_KEY` for live AI features")
 
 
 # --- Session state defaults ---
@@ -60,11 +57,21 @@ if "pdf_path" not in st.session_state:
 if "uploaded_filename" not in st.session_state:
     st.session_state.uploaded_filename = None
 
+# Screening flow state - for one-question-at-a-time
+if "pending_questions" not in st.session_state:
+    st.session_state.pending_questions = []
+if "current_question_index" not in st.session_state:
+    st.session_state.current_question_index = 0
+if "screening_answers" not in st.session_state:
+    st.session_state.screening_answers = {}
+if "screening_job_id" not in st.session_state:
+    st.session_state.screening_job_id = None
+
 
 def send_chat(message: str):
     """Send a message to the agent and update session state."""
     st.session_state.messages.append({"role": "user", "content": message})
-    with st.spinner("Thinking..."):
+    with st.spinner("🤔 AI is thinking..."):
         resp = requests.post(f"{API_BASE}/chat", json={
             "messages": st.session_state.messages,
             "candidate_id": st.session_state.candidate_id,
@@ -133,29 +140,40 @@ with st.sidebar:
 
         smtp_configured = status.get("smtp_configured", False)
 
-        if smtp_configured:
-            if st.button("📤 Send to Recruiter", type="primary"):
-                st.session_state.send_confirmed = True
-                with st.spinner("Sending email..."):
-                    resp = requests.post(f"{API_BASE}/applications", json={
-                        "candidate_id": st.session_state.candidate_id,
-                        "job_id": next((m["job_id"] for m in st.session_state.matches if m.get("score", 0) == max(mm.get("score", 0) for mm in st.session_state.matches)), ""),
-                        "draft": draft,
-                        "send_confirmed": True,
-                    })
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("status") == "sent":
-                            st.success(f"✅ Email sent! Message ID: {data.get('message_id', 'N/A')}")
-                            st.session_state.email_draft = None
+        # Discard draft option
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("❌ Discard Draft", use_container_width=True):
+                st.session_state.email_draft = None
+                st.session_state.screening_answers = {}
+                st.session_state.pending_questions = []
+                st.session_state.current_question_index = 0
+                st.rerun()
+
+        with col2:
+            if smtp_configured:
+                if st.button("📤 Send to Recruiter", type="primary", use_container_width=True):
+                    st.session_state.send_confirmed = True
+                    with st.spinner("Sending email..."):
+                        resp = requests.post(f"{API_BASE}/applications", json={
+                            "candidate_id": st.session_state.candidate_id,
+                            "job_id": next((m["job_id"] for m in st.session_state.matches if m.get("score", 0) == max(mm.get("score", 0) for mm in st.session_state.matches)), ""),
+                            "draft": draft,
+                            "send_confirmed": True,
+                        })
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if data.get("status") == "sent":
+                                st.success(f"✅ Email sent! Message ID: {data.get('message_id', 'N/A')}")
+                                st.session_state.email_draft = None
+                            else:
+                                st.error(f"Failed to send: {data.get('error', 'Unknown error')}")
                         else:
-                            st.error(f"Failed to send: {data.get('error', 'Unknown error')}")
-                    else:
-                        st.error(f"Error: {resp.status_code}")
-        else:
-            st.button("📤 Send to Recruiter", type="primary", disabled=True)
-            st.caption("📧 Email sending is not configured. Set ALIYUN_SMTP_USER and ALIYUN_SMTP_PASS to enable.")
-            st.success("✅ Email draft generated successfully! The workflow up to this point is fully functional.")
+                            st.error(f"Error: {resp.status_code}")
+            else:
+                st.button("📤 Send to Recruiter", type="primary", disabled=True, use_container_width=True)
+                st.caption("📧 Email sending is not configured. Set ALIYUN_SMTP_USER and ALIYUN_SMTP_PASS to enable.")
+                st.success("✅ Email draft generated successfully! The workflow up to this point is fully functional.")
     else:
         st.info("No email draft yet. Complete the screening process to generate one.")
 
