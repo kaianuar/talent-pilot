@@ -1,4 +1,4 @@
-"""FastAPI backend for TalentPilot."""
+"""FastAPI backend for TalentPilot with gRPC and WebSocket support."""
 
 import json
 import logging
@@ -7,13 +7,17 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# Database and models
 from backend.db import init_db, seed_from_json, log_audit, get_session
 from backend.models.audit_log import AuditLogEntry
+
+# Services
 from backend.services import (
     list_jobs,
     get_job,
@@ -25,36 +29,103 @@ from backend.services import (
 )
 from backend.services.resume_parser import parse_resume, ResumeParseError
 from backend.services.email import send_email, EmailSendError
-# NOTE: Old agent orchestrator removed - now using hexagonal architecture
-# from backend.agent.orchestrator import run_turn
+
+# gRPC and WebSocket imports
+from backend.infrastructure.grpc.server import GRPCServer, start_dual_server
+from backend.infrastructure.grpc.servicer import ScreeningServicer
+from backend.infrastructure.websocket.manager import ConnectionManager
+from backend.infrastructure.websocket.routes import router as websocket_router
+
+# Config
 from backend.config import API_HOST, API_PORT, SMTP_USER, SMTP_PASS, QWEN_API_KEY
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup: init DB and seed jobs."""
-    init_db()
-    count = seed_from_json()
-    if count:
-        logger.info("Seeded %d jobs", count)
-    yield
+# Global gRPC server instance
+_grpc_server: Optional[GRPCServer] = None
 
 
-app = FastAPI(title="TalentPilot API", version="1.0.0", lifespan=lifespan)
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application with gRPC and WebSocket support."""
+    
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """Application lifespan manager - handles startup and shutdown."""
+        global _grpc_server
+        
+        # Startup
+        logger.info("=" * 60)
+        logger.info("TalentPilot API Starting Up...")
+        logger.info("=" * 60)
+        
+        # Initialize database
+        init_db()
+        count = seed_from_json()
+        if count:
+            logger.info(f"✅ Seeded {count} jobs")
+        
+        # Start gRPC server
+        logger.info("🚀 Starting gRPC server on port 50051...")
+        _grpc_server = GRPCServer(
+            host="0.0.0.0",
+            port=50051,
+            max_workers=10,
+        )
+        _grpc_server.start()
+        logger.info("✅ gRPC server started successfully")
+        
+        logger.info("✅ TalentPilot API ready")
+        logger.info("=" * 60)
+        
+        yield
+        
+        # Shutdown
+        logger.info("=" * 60)
+        logger.info("TalentPilot API Shutting Down...")
+        logger.info("=" * 60)
+        
+        # Stop gRPC server
+        if _grpc_server:
+            logger.info("🛑 Stopping gRPC server...")
+            _grpc_server.stop(grace_period=30.0)
+            logger.info("✅ gRPC server stopped")
+        
+        logger.info("✅ TalentPilot API shutdown complete")
+        logger.info("=" * 60)
+    
+    # Create FastAPI app
+    app = FastAPI(
+        title="TalentPilot API",
+        description="AI-powered recruitment screening API with gRPC and WebSocket support",
+        version="2.0.0",
+        lifespan=lifespan,
+    )
+    
+    # CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Include WebSocket routes
+    app.include_router(websocket_router)
+    
+    return app
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# Create the app instance
+app = create_app()
 
 
-# --- Request/Response models ---
+# ============================================================================
+# Request/Response Models
+# ============================================================================
 
 class ChatRequest(BaseModel):
     messages: list[dict]
@@ -87,7 +158,9 @@ class ApplicationResponse(BaseModel):
     error: str | None = None
 
 
-# --- Endpoints ---
+# ============================================================================
+# REST API Endpoints
+# ============================================================================
 
 @app.get("/status")
 async def get_status():
@@ -95,70 +168,43 @@ async def get_status():
     return {
         "api_key_configured": bool(QWEN_API_KEY),
         "smtp_configured": bool(SMTP_USER and SMTP_PASS),
-        "version": "1.0.0",
+        "grpc_server_running": _grpc_server is not None,
+        "version": "2.0.0",
     }
+
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_cv(file: UploadFile = File(...)):
     """Upload a CV PDF and parse it."""
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files are accepted.")
-
-    # Save to disk
-    upload_dir = Path("data/uploads")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    file_id = str(uuid.uuid4())
-    pdf_path = upload_dir / f"{file_id}.pdf"
-    content = await file.read()
-    pdf_path.write_bytes(content)
-
-    # Parse
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files are accepted")
+    
+    candidate = create_candidate(name=file.filename)
+    
+    pdf_path = Path("uploads") / f"{candidate['id']}.pdf"
+    pdf_path.parent.mkdir(exist_ok=True)
+    
+    with open(pdf_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
     try:
-        parsed = parse_resume(content)
+        parsed = parse_resume(str(pdf_path))
+        save_parsed_resume(candidate["id"], parsed)
     except ResumeParseError as e:
-        log_audit(action="resume_parse_failed", details={"error": str(e)}, status="failed")
-        raise HTTPException(422, f"Could not parse resume: {e}")
-
-    # Create candidate
-    candidate = create_candidate(
-        name=parsed.get("name", "Unknown"),
-        email=parsed.get("email", ""),
-        phone=parsed.get("phone", ""),
-        resume_url=str(pdf_path),
-    )
-    save_parsed_resume(candidate["id"], parsed)
-
+        raise HTTPException(400, f"Failed to parse resume: {e}")
+    
     log_audit(
         action="resume_uploaded",
         candidate_id=candidate["id"],
         details={"filename": file.filename, "skills_count": len(parsed.get("skills", []))},
     )
-
+    
     return UploadResponse(candidate_id=candidate["id"], parsed=parsed, pdf_path=str(pdf_path))
 
 
-# NOTE: /chat endpoint temporarily disabled - migrating to new hexagonal architecture
-# The new implementation will use:
-# - backend.application.services.screening_orchestrator
-# - backend.infrastructure.orchestration.graph_builder
-# - LangGraph for workflow orchestration
-
-# @app.post("/chat", response_model=ChatResponse)
-# async def chat(req: ChatRequest):
-#     """Run one conversation turn through the agent."""
-#     # TODO: Implement using new hexagonal architecture
-#     raise HTTPException(501, "Chat endpoint being migrated to new architecture")
-
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    """Run one conversation turn through the agent. (MIGRATING - Limited functionality)"""
-    # TODO: Full implementation using new hexagonal architecture
-    # For now, return a placeholder response
-    return ChatResponse(
-        messages=req.messages + [{"role": "assistant", "content": "[System migrating to new architecture. Chat functionality temporarily limited.]"}],
-        assistant_text="[System migrating to new architecture. Chat functionality temporarily limited.]"
-    )
+# NOTE: /chat endpoint has been replaced by gRPC ScreeningService
+# Use StartScreening, SubmitAnswer, and GetNextQuestion gRPC methods instead
 
 
 @app.get("/jobs")
@@ -187,13 +233,11 @@ async def submit_application(req: ApplicationRequest):
             status="rejected",
         )
         raise HTTPException(403, "send_confirmed must be True to send the application email.")
-
-    # Get job for recruiter email
+    
     job = get_job(req.job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-
-    # Create application record
+    
     application = create_application(
         candidate_id=req.candidate_id,
         job_id=req.job_id,
@@ -202,8 +246,7 @@ async def submit_application(req: ApplicationRequest):
         screening_answers=req.draft.get("screening_answers", {}),
         status="sending",
     )
-
-    # Send email
+    
     try:
         message_id = send_email(
             to=req.draft.get("to", job["recruiter_email"]),

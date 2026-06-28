@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package talentpilot.screening;
+
+option go_package = "backend/infrastructure/grpc/proto";
+
+// ScreeningService provides the main interface for candidate screening
+service ScreeningService {
+  // Start a new screening session for a candidate
+  rpc StartScreening(StartScreeningRequest) returns (StartScreeningResponse);
+  
+  // Get the next question for the current screening session
+  rpc GetNextQuestion(GetNextQuestionRequest) returns (GetNextQuestionResponse);
+  
+  // Submit an answer and get the next question or assessment
+  rpc SubmitAnswer(SubmitAnswerRequest) returns (SubmitAnswerResponse);
+  
+  // Get the final screening assessment and email draft
+  rpc GetScreeningResult(GetScreeningResultRequest) returns (GetScreeningResultResponse);
+  
+  // Stream real-time screening progress updates
+  rpc StreamScreeningProgress(StreamScreeningProgressRequest) returns (stream ScreeningProgressUpdate);
+}
+
+// Request/Response messages
+
+message StartScreeningRequest {
+  string candidate_id = 1;
+  string job_id = 2;
+  string match_tier = 3;  // STRONG_MATCH, PARTIAL_MATCH, WEAK_MATCH
+  int32 question_count = 4;  // Optional: 1-4 questions
+}
+
+message StartScreeningResponse {
+  string screening_id = 1;
+  bool success = 2;
+  string error_message = 3;
+  Question first_question = 4;
+}
+
+message GetNextQuestionRequest {
+  string screening_id = 1;
+  string candidate_id = 2;
+}
+
+message GetNextQuestionResponse {
+  Question question = 1;
+  bool has_more_questions = 2;
+  bool is_complete = 3;
+  Assessment preliminary_assessment = 4;
+}
+
+message SubmitAnswerRequest {
+  string screening_id = 1;
+  string candidate_id = 2;
+  string question_id = 3;
+  string answer_text = 4;
+  float response_time_seconds = 5;  // Optional: how long user took to answer
+}
+
+message SubmitAnswerResponse {
+  AnswerAssessment assessment = 1;
+  Question next_question = 2;
+  bool is_complete = 3;
+  EmailDraft email_draft = 4;  // Available when screening is complete
+}
+
+message GetScreeningResultRequest {
+  string screening_id = 1;
+  string candidate_id = 2;
+}
+
+message GetScreeningResultResponse {
+  bool success = 1;
+  ScreeningSummary summary = 2;
+  EmailDraft email_draft = 3;
+  repeated QuestionAnswer qa_history = 4;
+  string error_message = 5;
+}
+
+message StreamScreeningProgressRequest {
+  string screening_id = 1;
+  string candidate_id = 2;
+}
+
+message ScreeningProgressUpdate {
+  string screening_id = 1;
+  string status = 2;  // STARTED, QUESTION_ASKED, ANSWER_RECEIVED, ASSESSING, COMPLETE
+  int32 current_question_number = 3;
+  int32 total_questions = 4;
+  float progress_percentage = 5;  // 0.0 to 100.0
+  string current_question_text = 6;  // Optional: text of current question
+  Assessment latest_assessment = 7;  // Optional: latest answer assessment
+  string timestamp = 8;  // ISO 8601 timestamp
+}
+
+// Supporting message types
+
+message Question {
+  string id = 1;
+  string text = 2;
+  string type = 3;  // TECHNICAL_DEPTH, EXPERIENCE_VERIFICATION, PROBLEM_SOLVING, CULTURE_FIT, GAP_PROBE
+  string focus_area = 4;
+  repeated string expected_evidence = 5;
+  string priority = 6;  // REQUIRED, IMPORTANT, BONUS
+}
+
+message Assessment {
+  string quality = 1;  // STRONG, ADEQUATE, VAGUE, IRRELEVANT, CONTRADICTORY
+  float confidence = 2;  // 0.0 to 1.0
+  repeated string key_points_identified = 3;
+  repeated string gaps_identified = 4;
+  string decision = 5;  // PROCEED_TO_NEXT_QUESTION, PROBE_FOR_CLARITY, SKIP_TO_EMAIL, REJECT_CANDIDATE
+  string reasoning = 6;
+}
+
+message AnswerAssessment {
+  string question_id = 1;
+  string quality = 2;
+  float confidence = 3;
+  repeated string key_points_identified = 4;
+  repeated string gaps_identified = 5;
+  string decision = 6;
+  string reasoning = 7;
+}
+
+message EmailDraft {
+  string to = 1;
+  string subject = 2;
+  string body = 3;
+  string cc = 4;
+  string bcc = 5;
+}
+
+message ScreeningSummary {
+  string screening_id = 1;
+  string candidate_id = 2;
+  string job_id = 3;
+  string status = 4;  // PENDING, IN_PROGRESS, COMPLETE, EARLY_TERMINATION, REJECTED
+  int32 total_questions_asked = 5;
+  float average_answer_quality = 6;  // 0.0 to 1.0
+  string final_assessment = 7;
+  bool sufficient_evidence = 8;
+  string termination_reason = 9;
+  string created_at = 10;
+  string completed_at = 11;
+}
+
+message QuestionAnswer {
+  Question question = 1;
+  string answer_text = 2;
+  AnswerAssessment assessment = 3;
+  string response_time_seconds = 4;
+  string timestamp = 5;
+}

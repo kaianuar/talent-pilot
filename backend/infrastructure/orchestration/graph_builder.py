@@ -33,6 +33,12 @@ from backend.infrastructure.orchestration.langgraph_schema import (
     get_screening_summary,
 )
 
+# === Import Node Functions ===
+# Import node implementations from screening_graph
+from backend.infrastructure.orchestration.screening_graph import (
+    draft_email_node,
+)
+
 
 # === Node Implementations ===
 # Each node receives state, delegates to domain, returns state updates
