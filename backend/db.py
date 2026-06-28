@@ -19,36 +19,81 @@ from backend.models.audit_log import AuditLogEntry
 # Import all models so Base.metadata is populated
 import backend.models  # noqa: F401
 
-engine = None
-SessionLocal = None
+
+class DatabaseManager:
+    """Manages database connections and sessions.
+    
+    This class encapsulates database state and provides a clean interface
+    for database operations, avoiding global mutable state.
+    """
+    
+    def __init__(self):
+        self._engine: Any | None = None
+        self._SessionLocal: Any | None = None
+        self._db_path: Path | None = None
+    
+    def init_db(self, db_path: str | Path | None = None) -> Any:
+        """Create all tables if they don't exist."""
+        from backend.config import DB_PATH
+        
+        path = db_path or DB_PATH
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        self._db_path = path
+        self._engine = create_engine(f"sqlite:///{path}", echo=False)
+        self._SessionLocal = sessionmaker(bind=self._engine)
+        Base.metadata.create_all(self._engine)
+        
+        return self._engine
+    
+    @contextmanager
+    def get_session(self) -> Session:
+        """Yield a SQLAlchemy session; auto-commits on success, rolls back on error."""
+        if self._SessionLocal is None:
+            self.init_db()
+        
+        session = self._SessionLocal()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+    
+    @property
+    def engine(self) -> Any | None:
+        """Get the current engine (if initialized)."""
+        return self._engine
+    
+    @property
+    def is_initialized(self) -> bool:
+        """Check if database has been initialized."""
+        return self._engine is not None and self._SessionLocal is not None
+
+
+# Global instance for backward compatibility
+# In new code, prefer creating your own DatabaseManager instance
+_db_manager = DatabaseManager()
 
 
 def init_db(db_path: str | Path | None = None):
     """Create all tables if they don't exist."""
-    global engine, SessionLocal
-    path = db_path or DB_PATH
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{path}", echo=False)
-    SessionLocal = sessionmaker(bind=engine)
-    Base.metadata.create_all(engine)
-    return engine
+    return _db_manager.init_db(db_path)
 
 
 @contextmanager
 def get_session() -> Session:
     """Yield a SQLAlchemy session; auto-commits on success, rolls back on error."""
-    if SessionLocal is None:
-        init_db()
-    session = SessionLocal()
-    try:
+    with _db_manager.get_session() as session:
         yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+
+
+# For backward compatibility with existing code
+engine = property(lambda self: _db_manager.engine)
+SessionLocal = property(lambda self: _db_manager._SessionLocal if hasattr(_db_manager, '_SessionLocal') else None)
 
 
 def seed_from_json(path: str | Path | None = None):

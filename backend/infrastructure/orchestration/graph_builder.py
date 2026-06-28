@@ -25,31 +25,13 @@ from backend.application.ports.question_generator import QuestionGenerator
 from backend.domain.services.answer_assessor import AnswerAssessor
 
 
-# === LangGraph State Schema ===
-
-class ScreeningGraphState(TypedDict):
-    """LangGraph state for screening workflow."""
-    
-    # Domain aggregate (central source of truth)
-    screening_session: ScreeningSession
-    
-    # Node tracking
-    current_node: str
-    node_history: Annotated[list[str], operator.add]
-    
-    # User interaction buffer
-    user_input: Optional[str]
-    
-    # LLM outputs (transient, stored in domain after processing)
-    generated_question_text: Optional[str]
-    assessment: Optional[AnswerAssessment]
-    
-    # Error handling
-    error: Optional[dict]
-    
-    # Metadata
-    started_at: datetime
-    last_updated: datetime
+# === Import State Schema ===
+# Use single source of truth from langgraph_schema
+from backend.infrastructure.orchestration.langgraph_schema import (
+    ScreeningGraphState,
+    create_initial_state,
+    get_screening_summary,
+)
 
 
 # === Node Implementations ===
