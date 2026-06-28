@@ -8,7 +8,7 @@ from typing import Any
 from openai import OpenAI
 
 from backend.config import QWEN_API_KEY, QWEN_BASE_URL, MODEL_REASONING
-from backend.agent.prompts import SYSTEM_PROMPT
+from backend.agent.prompts import build_system_prompt, detect_conversation_state
 from backend.agent.tools import (
     parse_resume_tool,
     list_jobs_tool,
@@ -171,20 +171,10 @@ def run_turn(
 
     client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
 
-    # Build the system prompt with candidate context
-    system_content = SYSTEM_PROMPT + f"\n\nCurrent candidate_id: {candidate_id}"
-
-    if pdf_path:
-        # CV just uploaded — tell agent to parse it
-        system_content += f"\n\nThe candidate has uploaded a CV at: {pdf_path}. Use parse_resume_tool to process it, then use match_jobs_tool to find suitable jobs."
-    else:
-        # CV already parsed — tell agent the data is available
-        system_content += (
-            f"\n\nIMPORTANT: The candidate's CV has already been parsed and their data is stored in the system. "
-            f"When the candidate asks about jobs, matches, or suitability, you MUST call match_jobs_tool with "
-            f"candidate_id='{candidate_id}' to retrieve their parsed resume and find matching jobs. "
-            f"Do NOT ask them to upload a CV — it's already been processed."
-        )
+    # Detect conversation state and build focused system prompt
+    state = detect_conversation_state(messages)
+    system_content = build_system_prompt(state, candidate_id, pdf_path)
+    logger.info("Conversation state: %s", state)
 
     agent_messages = [{"role": "system", "content": system_content}]
     agent_messages.extend(messages)
