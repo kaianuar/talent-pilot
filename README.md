@@ -6,9 +6,9 @@ TalentPilot is an AI-powered recruiting assistant that automates the end-to-end 
 
 ## 🏗️ Architecture
 
-```
+```text
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐
-│   Browser   │────▶│   Nginx     │────▶│  Streamlit (8501)   │
+│   Browser   │────▶│   Nginx     │────▶│  React (Vite)       │
 │  (Candidate) │     │   (9000)    │     │  Chat UI + Preview  │
 └─────────────┘     └──────┬──────┘     └─────────────────────┘
                            │
@@ -47,19 +47,21 @@ TalentPilot is an AI-powered recruiting assistant that automates the end-to-end 
 # 1. Clone and install
 git clone <repo-url>
 cd qwen-hackathon
-pip install -r backend/requirements.txt -r frontend/requirements.txt
+pip install -r backend/requirements.txt
 
-# 2. Set your API key
+# 2. Build React frontend
+cd frontend-react && npm install && npm run build && cd ..
+
+# 3. Set your API key
 export QWEN_API_KEY="your-qwen-cloud-api-key"
 
-# 3. Start backend
-uvicorn backend.app:app --reload --port 9000 &
+# 4. Start backend (serves API + static frontend)
+uvicorn backend.app:app --reload --port 9000
 
-# 4. Start frontend
-streamlit run frontend/streamlit_app.py --server.port 8501
-
-# 5. Open http://localhost:8501
+# 5. Open http://localhost:9000
 ```
+
+For frontend development with hot-reload, run `cd frontend-react && npm run dev` in a separate terminal.
 
 ## 📁 Project Structure
 
@@ -85,8 +87,18 @@ qwen-hackathon/
 │       ├── prompts.py          # System prompts
 │       ├── tools.py            # 6 MCP-style tools
 │       └── orchestrator.py     # Agent loop with tool calling
-├── frontend/
-│   └── streamlit_app.py        # Chat UI + job matches + email preview
+├── frontend-react/
+│   ├── src/
+│   │   ├── components/         # React UI components
+│   │   ├── hooks/              # Custom React hooks
+│   │   ├── store/              # State management
+│   │   ├── api/                # API client layer
+│   │   ├── App.tsx             # Root component
+│   │   └── main.tsx            # Entry point
+│   ├── public/                 # Static assets
+│   ├── index.html              # HTML template
+│   ├── vite.config.ts          # Vite configuration
+│   └── package.json            # Node dependencies
 ├── data/
 │   ├── seed_jobs.json          # 32 realistic job listings
 │   └── test_resumes/           # Sample CVs for testing
@@ -156,7 +168,7 @@ pytest tests/test_agent_flow.py -v         # Phase 4 (mocked LLM)
 | Screening Questions | qwen3-max | Chat + Reasoning |
 | Email Drafting | qwen3-max | Chat + Reasoning |
 | Backend | FastAPI + SQLAlchemy | — |
-| Frontend | Streamlit | — |
+| Frontend | React + TypeScript + Vite + Material UI | — |
 | Email | Alibaba DirectMail | — |
 | Deployment | Alibaba Cloud FC | — |
 
