@@ -181,4 +181,18 @@ export const getStatus = (): Promise<{
     version: string;
   }>('/status').then(r => r.data);
 };
+
+export const submitApplication = (
+  candidateId: string,
+  jobId: string,
+  matchScore: number,
+  matchTier: string,
+): Promise<{ status: string; message_id?: string; error?: string }> => {
+  return apiClient.post<{ status: string; message_id?: string; error?: string }>('/applications', {
+    candidate_id: candidateId,
+    job_id: jobId,
+    draft: { match_score: matchScore, match_tier: matchTier },
+    send_confirmed: true,
+  }).then(r => r.data);
+};
 export default apiClient;

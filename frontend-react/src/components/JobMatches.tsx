@@ -16,6 +16,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import { useMatches, useMatchJobs } from '../api/hooks';
+import { useAppStore } from '../store';
 import type { JobMatch } from '../api/client';
 
 interface JobMatchesProps {
@@ -140,7 +141,7 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
       </Box>
 
       {matches.map((match) => (
-        <Card key={match.job_id} sx={{ mb: 2, '&:hover': { boxShadow: 4 } }}>
+        <Card key={match.job_id} sx={{ mb: 2, '&:hover': { boxShadow: 4 }, cursor: 'pointer' }} onClick={() => useAppStore.getState().setSelectedJob(match.job_id, match.job_title)}>
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
               <Typography variant="h6" component="div">

@@ -16,7 +16,8 @@ import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import { useChat, useUploadResume } from '../api/hooks';
+import { useChat, useUploadResume, useSubmitApplication } from '../api/hooks';
+import { useAppStore } from '../store';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -44,13 +45,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [showSendButton, setShowSendButton] = useState(false);
-  const [needsSendConfirmed, setNeedsSendConfirmed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const chatMutation = useChat();
   const uploadMutation = useUploadResume();
+  const submitMutation = useSubmitApplication();
 
+  const selectedJobId = useAppStore((s) => s.selectedJobId);
+  const selectedJobTitle = useAppStore((s) => s.selectedJobTitle);
+  const matches = useAppStore((s) => s.matches);
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -78,7 +82,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           content: m.content,
         })),
         candidateId,
-        sendConfirmed: needsSendConfirmed || undefined,
+        sendConfirmed: false, // send_confirmed handled via /applications
       });
 
       const assistantMessage: Message = {
@@ -89,16 +93,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Show send-to-recruiter button when assistant response mentions
-      // sending, applying, or emailing the recruiter
-      if (needsSendConfirmed) {
-        setShowSendButton(false);
-        setNeedsSendConfirmed(false);
-      } else {
-        const lower = response.assistant_text.toLowerCase();
-        if (/send|apply|email|recruit|application/.test(lower)) {
-          setShowSendButton(true);
-        }
+      // Show send-to-recruiter button when assistant mentions applying
+      const lower = response.assistant_text.toLowerCase();
+      if (/send|apply|email|recruit|application/.test(lower)) {
+        setShowSendButton(true);
       }
     } catch {
       const errorMessage: Message = {
@@ -313,23 +311,43 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </Box>
 
         {/* Send to Recruiter confirmation */}
-        {showSendButton && (
+        {showSendButton && selectedJobId && (
           <Box sx={{ mt: 2, p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
             <Typography variant="body2" sx={{ mb: 1, color: 'success.contrastText' }}>
-              Ready to send your application? This will email the recruiter with your profile.
+              Apply to <strong>{selectedJobTitle}</strong>? This will email the recruiter with your profile.
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
                 variant="contained"
                 color="success"
                 size="small"
-                disabled={chatMutation.isPending || isUploading}
-                onClick={() => {
-                  setInput('I confirm — please send the application email');
-                  setNeedsSendConfirmed(true);
+                disabled={chatMutation.isPending || isUploading || submitMutation.isPending}
+                onClick={async () => {
+                  if (!candidateId) return;
+                  const match = matches.find(m => m.job_id === selectedJobId);
+                  try {
+                    await submitMutation.mutateAsync({
+                      candidateId,
+                      jobId: selectedJobId,
+                      matchScore: match?.match_score ?? 0,
+                      matchTier: match?.tier ?? 'CONFIRMED',
+                    });
+                    setMessages((prev) => [...prev, {
+                      role: 'assistant',
+                      content: `✅ Your application for **${selectedJobTitle}** has been sent to the recruiter!`,
+                      timestamp: new Date(),
+                    }]);
+                  } catch {
+                    setMessages((prev) => [...prev, {
+                      role: 'assistant',
+                      content: '⚠️ Failed to send application. Please try again.',
+                      timestamp: new Date(),
+                    }]);
+                  }
+                  setShowSendButton(false);
                 }}
               >
-                Send to Recruiter
+                {submitMutation.isPending ? 'Sending...' : 'Send to Recruiter'}
               </Button>
               <Button
                 variant="outlined"

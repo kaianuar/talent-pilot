@@ -13,6 +13,7 @@ import {
   chat,
   getAuditLog,
   getStatus,
+  submitApplication,
   type Candidate,
   type Job,
   type JobMatch,
@@ -79,6 +80,28 @@ export const useUploadResume = () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.candidate(data.candidate_id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.matches(data.candidate_id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+};
+
+export const useSubmitApplication = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      candidateId,
+      jobId,
+      matchScore,
+      matchTier,
+    }: {
+      candidateId: string;
+      jobId: string;
+      matchScore: number;
+      matchTier: string;
+    }) => {
+      return await submitApplication(candidateId, jobId, matchScore, matchTier);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.auditLog(20) });
     },
   });
 };

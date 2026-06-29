@@ -25,7 +25,9 @@ interface AppState {
   setJobs: (jobs: Job[]) => void;
   matches: JobMatch[];
   setMatches: (matches: JobMatch[]) => void;
-
+  selectedJobId: string | null;
+  selectedJobTitle: string | null;
+  setSelectedJob: (jobId: string | null, jobTitle?: string | null) => void;
   // Actions
   reset: () => void;
 }
@@ -38,6 +40,8 @@ const initialState = {
   candidate: null,
   jobs: [],
   matches: [],
+  selectedJobId: null,
+  selectedJobTitle: null,
 };
 
 export const useAppStore = create<AppState>()(
@@ -71,6 +75,8 @@ export const useAppStore = create<AppState>()(
       setJobs: (jobs) => set({ jobs }),
 
       setMatches: (matches) => set({ matches }),
+
+      setSelectedJob: (jobId, jobTitle = null) => set({ selectedJobId: jobId, selectedJobTitle: jobTitle }),
 
       reset: () => {
         set(initialState);
