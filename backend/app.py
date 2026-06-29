@@ -31,9 +31,16 @@ from backend.services import (
 from backend.services.resume_parser import parse_resume, ResumeParseError
 from backend.services.email import send_email, EmailSendError
 
-# gRPC and WebSocket imports
-from backend.infrastructure.grpc.server import GRPCServer, start_dual_server
-from backend.infrastructure.grpc.servicer import ScreeningServicer
+# gRPC and WebSocket imports — gRPC is optional (proto may not be compiled)
+try:
+    from backend.infrastructure.grpc.server import GRPCServer, start_dual_server
+    from backend.infrastructure.grpc.servicer import ScreeningServicer
+    _grpc_available = True
+except ImportError:
+    GRPCServer = None  # type: ignore
+    start_dual_server = None  # type: ignore
+    ScreeningServicer = None  # type: ignore
+    _grpc_available = False
 from backend.infrastructure.websocket.manager import ConnectionManager
 from backend.infrastructure.websocket.routes import router as websocket_router
 
@@ -50,8 +57,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Global gRPC server instance
-_grpc_server: Optional[GRPCServer] = None
+# Global gRPC server instance (only if gRPC imports succeeded)
+_grpc_server: Optional[object] = None
 
 
 def create_app() -> FastAPI:
@@ -73,16 +80,18 @@ def create_app() -> FastAPI:
         if count:
             logger.info(f"✅ Seeded {count} jobs")
         
-        # Start gRPC server
-        logger.info("🚀 Starting gRPC server on port 50051...")
-        _grpc_server = GRPCServer(
-            host="0.0.0.0",
-            port=50051,
-            max_workers=10,
-        )
-        _grpc_server.start()
-        logger.info("✅ gRPC server started successfully")
-        
+        # Start gRPC server (optional)
+        if _grpc_available:
+            logger.info("🚀 Starting gRPC server on port 50051...")
+            _grpc_server = GRPCServer(
+                host="0.0.0.0",
+                port=50051,
+                max_workers=10,
+            )
+            _grpc_server.start()
+            logger.info("✅ gRPC server started successfully")
+        else:
+            logger.info("ℹ️  gRPC server not available (proto not compiled) — REST only mode")
         logger.info("✅ TalentPilot API ready")
         logger.info("=" * 60)
         
@@ -257,11 +266,11 @@ class MatchResponse(BaseModel):
 
 def _compute_match(candidate_skills: list[str], candidate_years: float, job: dict) -> dict:
     """Compute a match score between a candidate and a job."""
-    required = [s.lower() for s in job.get("requirements", [])]
-    nice = [s.lower() for s in job.get("nice_to_have", [])]
+    def _names(skills):
+        return [s if isinstance(s, str) else s.get("name", "") for s in skills]
+    required = [s.lower() for s in _names(job.get("required_skills", []))]
+    nice = [s.lower() for s in _names(job.get("preferred_skills", []))]
     cand_skills_lower = [s.lower() for s in candidate_skills]
-
-    # Required skills coverage
     matched_required = [s for s in required if any(
         cs in s or s in cs for cs in cand_skills_lower
     )]
@@ -321,7 +330,7 @@ async def match_candidate(req: MatchRequest):
 
     parsed = get_parsed_resume(req.candidate_id)
     skills = [s.get("name", "") for s in parsed.get("skills", [])] if parsed else []
-    years = candidate.get("years_experience", 0) or 0
+    years = parsed.get("years_experience", 0) or 0 if parsed else 0
 
     jobs = list_jobs()
     matches = [_compute_match(skills, years, j) for j in jobs]
@@ -353,10 +362,18 @@ async def get_single_job(job_id: str):
 
 @app.get("/candidates/{candidate_id}")
 async def get_candidate_endpoint(candidate_id: str):
-    """Get a candidate by ID."""
+    """Get a candidate by ID, with merged parsed resume data."""
     candidate = get_candidate(candidate_id)
     if not candidate:
         raise HTTPException(404, "Candidate not found")
+    parsed = get_parsed_resume(candidate_id)
+    if parsed:
+        candidate["years_experience"] = parsed.get("years_experience", 0)
+        candidate["skills"] = parsed.get("skills", [])
+        candidate["education"] = parsed.get("education", [])
+        candidate["experience"] = parsed.get("experiences", [])
+        candidate["certifications"] = parsed.get("certifications", [])
+        candidate["raw_text"] = parsed.get("raw_response", "")
     return candidate
 
 

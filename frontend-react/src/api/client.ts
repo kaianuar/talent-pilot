@@ -9,15 +9,12 @@ export interface Candidate {
   email?: string;
   phone?: string;
   location?: string;
-  linkedin?: string;
-  github?: string;
-  website?: string;
   years_experience: number;
   skills: Skill[];
   education: Education[];
   experience: Experience[];
   certifications: string[];
-  raw_text: string;
+  raw_text?: string;
 }
 
 export interface Skill {
@@ -45,16 +42,13 @@ export interface Experience {
 export interface Job {
   id: string;
   title: string;
-  department: string;
-  location: string;
-  salary_range?: string;
+  company: string;
+  required_skills: string[];
+  preferred_skills: string[];
+  min_years: number;
   description: string;
-  requirements: string[];
-  nice_to_have: string[];
-  employment_type: string;
-  remote_policy: string;
-  posted_date: string;
-  status: string;
+  recruiter_email: string;
+  created_at?: string;
 }
 
 export interface JobMatch {
