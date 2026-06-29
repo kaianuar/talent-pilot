@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Box,
+  CircularProgress,
   CssBaseline,
   ThemeProvider,
   AppBar,
@@ -17,9 +18,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import theme from './theme';
-import ChatInterface from './components/ChatInterface';
-import JobMatches from './components/JobMatches';
-import CandidateProfile from './components/CandidateProfile';
+const ChatInterface = React.lazy(() => import('./components/ChatInterface'));
+const JobMatches = React.lazy(() => import('./components/JobMatches'));
+const CandidateProfile = React.lazy(() => import('./components/CandidateProfile'));
 import { useStatus } from './api/hooks';
 
 // Create Query Client
@@ -103,10 +104,12 @@ const AppContent: React.FC = () => {
                 overflow: 'hidden',
               }}
             >
-              <ChatInterface
-                candidateId={candidateId}
-                onCandidateCreated={handleCandidateCreated}
-              />
+              <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
+                <ChatInterface
+                  candidateId={candidateId}
+                  onCandidateCreated={handleCandidateCreated}
+                />
+              </React.Suspense>
             </Paper>
           </Grid>
 
@@ -114,12 +117,16 @@ const AppContent: React.FC = () => {
           <Grid size={{ xs: 12, md: 4 }} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Job Matches */}
             <Paper elevation={1} sx={{ flex: 1, mb: 2, overflow: 'auto' }}>
-              <JobMatches candidateId={candidateId} />
+              <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
+                <JobMatches candidateId={candidateId} />
+              </React.Suspense>
             </Paper>
 
             {/* Candidate Profile */}
             <Paper elevation={1} sx={{ flex: 1, overflow: 'auto' }}>
-              <CandidateProfile candidateId={candidateId} />
+              <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
+                <CandidateProfile candidateId={candidateId} />
+              </React.Suspense>
             </Paper>
           </Grid>
         </Grid>

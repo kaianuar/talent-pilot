@@ -1,20 +1,62 @@
 """Tests for Phase 2: Resume parsing service.
 
 Tests the parse_resume function against sample CVs.
-LLM-dependent tests require a real QWEN_API_KEY.
+LLM-dependent tests use mocks so no real API key is needed.
 """
 
 import json
 import os
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from backend.services.resume_parser import parse_resume, parse_resume_from_file, ResumeParseError, _extract_json
 
-# Check for a real API key (not the test dummy)
-_DUMMY_KEYS = {"test-key", "test-key-not-real", ""}
-HAS_REAL_API_KEY = bool(os.environ.get("QWEN_API_KEY")) and os.environ.get("QWEN_API_KEY", "") not in _DUMMY_KEYS
+
+# --- Fixtures ---
+
+REALISTIC_PARSED_RESUME = {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1-555-0100",
+    "skills": [
+        {"name": "Python", "years": 5, "category": "language"},
+        {"name": "React", "years": 3, "category": "framework"},
+        {"name": "Docker", "years": 4, "category": "tool"},
+        {"name": "PostgreSQL", "years": 4, "category": "database"},
+    ],
+    "experiences": [
+        {
+            "company": "Acme Corp",
+            "role": "Senior Engineer",
+            "start": "2020-01",
+            "end": "2024-06",
+            "summary": "Led backend migration to microservices architecture.",
+        },
+        {
+            "company": "StartupXYZ",
+            "role": "Full Stack Developer",
+            "start": "2018-06",
+            "end": "2019-12",
+            "summary": "Built and deployed customer-facing web application.",
+        },
+    ],
+    "education": [
+        {"institution": "MIT", "degree": "B.S. Computer Science", "year": 2018},
+    ],
+    "years_experience": 7,
+}
+
+
+@pytest.fixture
+def mock_openai_client():
+    """Return a MagicMock that looks like an OpenAI client returning a parsed resume."""
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+    return mock_client
 
 
 @pytest.fixture
@@ -25,6 +67,8 @@ def sample_pdf_path():
         return path
     return None
 
+
+# --- _extract_json unit tests (no mocking needed) ---
 
 def test_extract_json_plain():
     """_extract_json should parse plain JSON."""
@@ -47,14 +91,18 @@ def test_extract_json_with_text():
         _extract_json(raw)
 
 
-@pytest.mark.skipif(not HAS_REAL_API_KEY, reason="No real QWEN_API_KEY set")
-def test_parse_resume_with_sample(sample_pdf_path):
-    """parse_resume should extract structured data from a real PDF."""
-    if sample_pdf_path is None:
-        pytest.skip("No sample PDF found in data/test_resumes/")
+# --- Mocked integration tests ---
 
-    pdf_bytes = sample_pdf_path.read_bytes()
-    result = parse_resume(pdf_bytes)
+def test_parse_resume_with_mock(mock_openai_client):
+    """parse_resume should return structured data from mocked LLM response."""
+    fake_pdf_bytes = b"%PDF-1.4 fake content for testing"
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key-for-testing"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_openai_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value="John Doe\njohn@example.com\nSenior Engineer\nPython, React, Docker, PostgreSQL\n" * 5),
+    ):
+        result = parse_resume(fake_pdf_bytes)
 
     assert "name" in result
     assert result["name"], "name should not be empty"
@@ -68,18 +116,25 @@ def test_parse_resume_with_sample(sample_pdf_path):
     assert result["years_experience"] >= 0
 
 
-@pytest.mark.skipif(not HAS_REAL_API_KEY, reason="No real QWEN_API_KEY set")
-def test_parse_resume_returns_valid_schema(sample_pdf_path):
+def test_parse_resume_returns_valid_schema(mock_openai_client):
     """parse_resume output should match ParsedResumeModel schema."""
     from backend.models.candidate import ParsedResumeModel
-    if sample_pdf_path is None:
-        pytest.skip("No sample PDF found")
 
-    result = parse_resume(sample_pdf_path.read_bytes())
+    fake_pdf_bytes = b"%PDF-1.4 fake content for testing"
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key-for-testing"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_openai_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value="John Doe\njohn@example.com\n" * 50),
+    ):
+        result = parse_resume(fake_pdf_bytes)
+
     parsed = ParsedResumeModel(**result)
     assert parsed.name
     assert parsed.email
 
+
+# --- Tests that need no mocking ---
 
 def test_parse_resume_no_api_key():
     """parse_resume should raise ResumeParseError if no API key."""

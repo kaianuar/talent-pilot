@@ -233,12 +233,15 @@ Be helpful, concise, and professional. If the candidate asks about jobs, check t
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
-    """Chat with the TalentPilot agent."""
+    """Chat with the TalentPilot agent. Stateless — send_confirmed for prompt context only."""
     if not QWEN_API_KEY:
         raise HTTPException(503, "AI service not configured")
 
     client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
     messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + req.messages
+
+    if req.send_confirmed:
+        messages.append({"role": "system", "content": "The user has explicitly confirmed they want to send the application. Acknowledge this and tell them the application is being processed."})
 
     try:
         response = client.chat.completions.create(
