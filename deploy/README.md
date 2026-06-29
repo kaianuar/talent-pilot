@@ -3,20 +3,22 @@
 ## Quick Start (Local)
 
 ```bash
-# Install dependencies
-pip install -r backend/requirements.txt -r frontend/requirements.txt
+# Install backend dependencies
+pip install -r backend/requirements.txt
+
+# Build React frontend
+cd frontend-react && npm install && npm run build && cd ..
 
 # Set environment variables
 export QWEN_API_KEY="your-api-key-here"
 
 # Start the backend
 uvicorn backend.app:app --reload --port 9000 &
-
-# Start the frontend
-streamlit run frontend/streamlit_app.py --server.port 8501
 ```
 
-Open http://localhost:8501 in your browser.
+Open http://localhost:9000 in your browser.
+
+For frontend development with hot-reload, run `cd frontend-react && npm run dev` separately.
 
 ## Docker Deployment
 
