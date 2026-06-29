@@ -21,6 +21,7 @@ from backend.models.audit_log import AuditLogEntry
 from backend.services import (
     list_jobs,
     get_job,
+    get_candidate,
     create_candidate,
     save_parsed_resume,
     get_parsed_resume,
@@ -36,8 +37,13 @@ from backend.infrastructure.grpc.servicer import ScreeningServicer
 from backend.infrastructure.websocket.manager import ConnectionManager
 from backend.infrastructure.websocket.routes import router as websocket_router
 
-# Config
-from backend.config import API_HOST, API_PORT, SMTP_USER, SMTP_PASS, QWEN_API_KEY
+from backend.config import (
+    API_HOST, API_PORT, SMTP_USER, SMTP_PASS, QWEN_API_KEY,
+    QWEN_BASE_URL, MODEL_REASONING, MODEL_CHAT,
+    SCORE_STRONG, SCORE_PARTIAL, SCORE_WEAK,
+    W_REQUIRED, W_ADJACENT, W_EXPERIENCE, W_REASONING,
+)
+from openai import OpenAI
 
 
 logging.basicConfig(level=logging.INFO)
@@ -127,16 +133,7 @@ app = create_app()
 # Request/Response Models
 # ============================================================================
 
-class ChatRequest(BaseModel):
-    messages: list[dict]
-    candidate_id: str
-    pdf_path: str | None = None
-    send_confirmed: bool = False
 
-
-class ChatResponse(BaseModel):
-    messages: list[dict]
-    assistant_text: str
 
 
 class UploadResponse(BaseModel):
@@ -203,8 +200,140 @@ async def upload_cv(file: UploadFile = File(...)):
     return UploadResponse(candidate_id=candidate["id"], parsed=parsed, pdf_path=str(pdf_path))
 
 
-# NOTE: /chat endpoint has been replaced by gRPC ScreeningService
-# Use StartScreening, SubmitAnswer, and GetNextQuestion gRPC methods instead
+
+# ============================================================================
+# Chat & Matching Endpoints
+# ============================================================================
+
+class ChatRequest(BaseModel):
+    messages: list[dict]
+    candidate_id: str | None = None
+    send_confirmed: bool = False
+
+class ChatResponse(BaseModel):
+    messages: list[dict]
+    assistant_text: str
+
+CHAT_SYSTEM_PROMPT = """You are TalentPilot, an AI recruiting assistant. You help candidates:
+- Upload their CV and get it parsed
+- Find matching job opportunities
+- Prepare for screening questions
+- Apply to jobs
+
+Be helpful, concise, and professional. If the candidate asks about jobs, check their matches. If they want to apply, guide them through the process. Never send an email without explicit confirmation."""
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(req: ChatRequest):
+    """Chat with the TalentPilot agent."""
+    if not QWEN_API_KEY:
+        raise HTTPException(503, "AI service not configured")
+
+    client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
+    messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + req.messages
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_CHAT,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=2000,
+        )
+    except Exception as e:
+        logger.error(f"Chat API error: {e}")
+        raise HTTPException(502, f"AI service error: {e}")
+
+    assistant_text = response.choices[0].message.content
+    return ChatResponse(
+        messages=req.messages + [{"role": "assistant", "content": assistant_text}],
+        assistant_text=assistant_text,
+    )
+
+
+class MatchRequest(BaseModel):
+    candidate_id: str
+
+class MatchResponse(BaseModel):
+    matches: list[dict]
+
+def _compute_match(candidate_skills: list[str], candidate_years: float, job: dict) -> dict:
+    """Compute a match score between a candidate and a job."""
+    required = [s.lower() for s in job.get("requirements", [])]
+    nice = [s.lower() for s in job.get("nice_to_have", [])]
+    cand_skills_lower = [s.lower() for s in candidate_skills]
+
+    # Required skills coverage
+    matched_required = [s for s in required if any(
+        cs in s or s in cs for cs in cand_skills_lower
+    )]
+    required_ratio = len(matched_required) / len(required) if required else 1.0
+
+    # Adjacent bonus: nice-to-have skills the candidate has
+    matched_nice = [s for s in nice if any(
+        cs in s or s in cs for cs in cand_skills_lower
+    )]
+    adjacent_bonus = len(matched_nice) / len(nice) if nice else 0.0
+
+    # Experience score
+    exp_years = candidate_years or 0
+    experience_score = min(exp_years / 10.0, 1.0)
+
+    # Composite score
+    composite = (
+        W_REQUIRED * required_ratio +
+        W_ADJACENT * adjacent_bonus +
+        W_EXPERIENCE * experience_score
+    )
+    # Normalize remaining weight to LLM reasoning
+    composite = composite / (W_REQUIRED + W_ADJACENT + W_EXPERIENCE)
+
+    # Tier classification
+    if composite >= SCORE_STRONG:
+        tier = "STRONG_MATCH"
+    elif composite >= SCORE_PARTIAL:
+        tier = "PARTIAL_MATCH"
+    elif composite >= SCORE_WEAK:
+        tier = "POOR_MATCH"
+    else:
+        tier = "NO_MATCH"
+
+    return {
+        "job_id": job["id"],
+        "job_title": job["title"],
+        "match_score": round(composite, 3),
+        "tier": tier,
+        "required_match_ratio": round(required_ratio, 3),
+        "adjacent_bonus": round(adjacent_bonus, 3),
+        "experience_score": round(experience_score, 3),
+        "llm_reasoning_score": 0.0,
+        "reasoning_explanation": (
+            f"Matched {len(matched_required)}/{len(required)} required skills"
+            + (f", {len(matched_nice)} nice-to-have skills" if matched_nice else "")
+            + f". {exp_years:.1f} years experience."
+        ),
+    }
+
+@app.post("/match", response_model=MatchResponse)
+async def match_candidate(req: MatchRequest):
+    """Match a candidate against all available jobs."""
+    candidate = get_candidate(req.candidate_id)
+    if not candidate:
+        raise HTTPException(404, "Candidate not found")
+
+    parsed = get_parsed_resume(req.candidate_id)
+    skills = [s.get("name", "") for s in parsed.get("skills", [])] if parsed else []
+    years = candidate.get("years_experience", 0) or 0
+
+    jobs = list_jobs()
+    matches = [_compute_match(skills, years, j) for j in jobs]
+    matches.sort(key=lambda m: m["match_score"], reverse=True)
+
+    log_audit(
+        action="match_computed",
+        candidate_id=req.candidate_id,
+        details={"jobs_matched": len(matches), "top_score": matches[0]["match_score"] if matches else 0},
+    )
+
+    return MatchResponse(matches=matches)
 
 
 @app.get("/jobs")
@@ -220,6 +349,15 @@ async def get_single_job(job_id: str):
     if not job:
         raise HTTPException(404, "Job not found")
     return job
+
+
+@app.get("/candidates/{candidate_id}")
+async def get_candidate_endpoint(candidate_id: str):
+    """Get a candidate by ID."""
+    candidate = get_candidate(candidate_id)
+    if not candidate:
+        raise HTTPException(404, "Candidate not found")
+    return candidate
 
 
 @app.post("/applications", response_model=ApplicationResponse)
