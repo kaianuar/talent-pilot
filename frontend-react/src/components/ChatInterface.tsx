@@ -10,6 +10,7 @@ import {
   Alert,
   Chip,
   LinearProgress,
+  Button,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -42,6 +43,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [input, setInput] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [showSendButton, setShowSendButton] = useState(false);
+  const [needsSendConfirmed, setNeedsSendConfirmed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +78,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           content: m.content,
         })),
         candidateId,
+        sendConfirmed: needsSendConfirmed || undefined,
       });
 
       const assistantMessage: Message = {
@@ -84,6 +88,18 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Show send-to-recruiter button when assistant response mentions
+      // sending, applying, or emailing the recruiter
+      if (needsSendConfirmed) {
+        setShowSendButton(false);
+        setNeedsSendConfirmed(false);
+      } else {
+        const lower = response.assistant_text.toLowerCase();
+        if (/send|apply|email|recruit|application/.test(lower)) {
+          setShowSendButton(true);
+        }
+      }
     } catch {
       const errorMessage: Message = {
         role: 'assistant',
@@ -251,7 +267,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             placeholder="Type your message..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
@@ -295,6 +311,36 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             clickable
           />
         </Box>
+
+        {/* Send to Recruiter confirmation */}
+        {showSendButton && (
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
+            <Typography variant="body2" sx={{ mb: 1, color: 'success.contrastText' }}>
+              Ready to send your application? This will email the recruiter with your profile.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                disabled={chatMutation.isPending || isUploading}
+                onClick={() => {
+                  setInput('I confirm — please send the application email');
+                  setNeedsSendConfirmed(true);
+                }}
+              >
+                Send to Recruiter
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setShowSendButton(false)}
+              >
+                Cancel
+              </Button>
+            </Box>
+          </Box>
+        )}
       </Paper>
     </Box>
   );
