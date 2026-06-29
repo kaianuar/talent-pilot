@@ -61,7 +61,6 @@ const StatusCheck: React.FC = () => {
 // Main App Content
 const AppContent: React.FC = () => {
   const [candidateId, setCandidateId] = useState<string | undefined>();
-  const [activeTab, setActiveTab] = useState<'chat' | 'matches' | 'profile'>('chat');
 
   const handleCandidateCreated = (id: string) => {
     setCandidateId(id);
@@ -92,9 +91,9 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <Container maxWidth="xl" sx={{ flex: 1, py: 2, display: 'flex', flexDirection: 'column' }}>
-        <Grid container spacing={2} sx={{ flex: 1 }}>
+      <Grid container spacing={2} sx={{ flex: 1 }}>
           {/* Chat Area */}
-          <Grid item xs={12} md={8} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <Grid size={{ xs: 12, md: 8 }} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Paper
               elevation={1}
               sx={{
@@ -112,7 +111,7 @@ const AppContent: React.FC = () => {
           </Grid>
 
           {/* Side Panel */}
-          <Grid item xs={12} md={4} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <Grid size={{ xs: 12, md: 4 }} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Job Matches */}
             <Paper elevation={1} sx={{ flex: 1, mb: 2, overflow: 'auto' }}>
               <JobMatches candidateId={candidateId} />

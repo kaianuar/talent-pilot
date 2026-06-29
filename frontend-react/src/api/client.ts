@@ -1,4 +1,5 @@
-import axios, { AxiosInstance, AxiosError, AxiosProgressEvent } from 'axios';
+import axios, { type AxiosInstance, type AxiosProgressEvent } from 'axios';
+import { AxiosError } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:9000';
 
@@ -107,18 +108,18 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  (error: AxiosError<{ detail?: string }>) => {
     const message = error.response?.data?.detail || error.message || 'Unknown error';
     console.error('[API Error]', message);
     return Promise.reject(new Error(message));
   }
 );
 
-// API functions
+// API functions — all return unwrapped data (not AxiosResponse)
 export const uploadResume = (
   file: File,
   onProgress?: (progress: UploadProgress) => void
-) => {
+): Promise<{ candidate_id: string; parsed: Candidate; pdf_path: string }> => {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -136,26 +137,29 @@ export const uploadResume = (
         }
       },
     }
-  );
+  ).then(r => r.data);
 };
 
-export const getCandidate = (id: string) => {
-  return apiClient.get<Candidate>(`/candidates/${id}`);
+export const getCandidate = (id: string): Promise<Candidate> => {
+  return apiClient.get<Candidate>(`/candidates/${id}`).then(r => r.data);
 };
 
-export const listJobs = () => {
-  return apiClient.get<Job[]>('/jobs');
+export const listJobs = (): Promise<Job[]> => {
+  return apiClient.get<Job[]>('/jobs').then(r => r.data);
 };
 
-export const getJob = (id: string) => {
-  return apiClient.get<Job>(`/jobs/${id}`);
+export const getJob = (id: string): Promise<Job> => {
+  return apiClient.get<Job>(`/jobs/${id}`).then(r => r.data);
 };
 
-export const matchJobs = (candidateId: string) => {
-  return apiClient.post<{ matches: JobMatch[] }>('/match', { candidate_id: candidateId });
+export const matchJobs = (candidateId: string): Promise<{ matches: JobMatch[] }> => {
+  return apiClient.post<{ matches: JobMatch[] }>('/match', { candidate_id: candidateId }).then(r => r.data);
 };
 
-export const chat = (messages: Array<{ role: string; content: string }>, candidateId?: string, sendConfirmed?: boolean) => {
+export const chat = (messages: Array<{ role: string; content: string }>, candidateId?: string, sendConfirmed?: boolean): Promise<{
+    messages: Array<{ role: string; content: string }>;
+    assistant_text: string;
+  }> => {
   return apiClient.post<{
     messages: Array<{ role: string; content: string }>;
     assistant_text: string;
@@ -163,21 +167,24 @@ export const chat = (messages: Array<{ role: string; content: string }>, candida
     messages,
     candidate_id: candidateId,
     send_confirmed: sendConfirmed || false,
-  });
+  }).then(r => r.data);
 };
 
-export const getAuditLog = (limit = 20, candidateId?: string) => {
+export const getAuditLog = (limit = 20, candidateId?: string): Promise<AuditLogEntry[]> => {
   return apiClient.get<AuditLogEntry[]>('/audit-log', {
     params: { limit, candidate_id: candidateId },
-  });
+  }).then(r => r.data);
 };
 
-export const getStatus = () => {
+export const getStatus = (): Promise<{
+    api_key_configured: boolean;
+    smtp_configured: boolean;
+    version: string;
+  }> => {
   return apiClient.get<{
     api_key_configured: boolean;
     smtp_configured: boolean;
     version: string;
-  }>('/status');
+  }>('/status').then(r => r.data);
 };
-
 export default apiClient;

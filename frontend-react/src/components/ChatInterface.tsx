@@ -84,7 +84,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
         role: 'assistant',
         content: 'I apologize, but I encountered an error processing your request. Please try again.',
@@ -117,7 +117,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       setMessages((prev) => [...prev, successMessage]);
       onCandidateCreated?.(result.candidate_id);
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
         role: 'assistant',
         content: 'I apologize, but I encountered an error uploading your CV. Please ensure it\'s a valid PDF file and try again.',

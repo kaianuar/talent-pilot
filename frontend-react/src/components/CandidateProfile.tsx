@@ -7,7 +7,7 @@ import {
   Avatar,
   Chip,
   Divider,
-  LinearProgress,
+
   Alert,
   Skeleton,
   List,
@@ -22,7 +22,7 @@ import LocationOnIcon from '@mui/icons-material/LocationOn';
 import WorkIcon from '@mui/icons-material/Work';
 import SchoolIcon from '@mui/icons-material/School';
 import CodeIcon from '@mui/icons-material/Code';
-import VerifiedIcon from '@mui/icons-material/Verified';
+
 import { useCandidate } from '../api/hooks';
 
 interface CandidateProfileProps {
@@ -110,7 +110,7 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
                 <ListItemIcon sx={{ minWidth: 32 }}>
                   <EmailIcon fontSize="small" color="action" />
                 </ListItemIcon>
-                <ListItemText primary={candidate.email} primaryTypographyProps={{ variant: 'body2' }} />
+                <ListItemText primary={candidate.email} slotProps={{ primary: { variant: 'body2' } }} />
               </ListItem>
             )}
             {candidate.phone && (
@@ -118,7 +118,7 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
                 <ListItemIcon sx={{ minWidth: 32 }}>
                   <PhoneIcon fontSize="small" color="action" />
                 </ListItemIcon>
-                <ListItemText primary={candidate.phone} primaryTypographyProps={{ variant: 'body2' }} />
+                <ListItemText primary={candidate.phone} slotProps={{ primary: { variant: 'body2' } }} />
               </ListItem>
             )}
             {candidate.location && (
@@ -126,7 +126,7 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
                 <ListItemIcon sx={{ minWidth: 32 }}>
                   <LocationOnIcon fontSize="small" color="action" />
                 </ListItemIcon>
-                <ListItemText primary={candidate.location} primaryTypographyProps={{ variant: 'body2' }} />
+                <ListItemText primary={candidate.location} slotProps={{ primary: { variant: 'body2' } }} />
               </ListItem>
             )}
           </List>
@@ -138,7 +138,7 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <CodeIcon color="primary" />
-            <Typography variant="subtitle1" fontWeight="medium">
+            <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
               Skills
             </Typography>
             <Chip size="small" label={candidate.skills.length} color="primary" />
@@ -163,19 +163,19 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <WorkIcon color="primary" />
-              <Typography variant="subtitle1" fontWeight="medium">
+              <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
                 Experience
               </Typography>
             </Box>
             {candidate.experience.slice(0, 3).map((exp, index) => (
               <Box key={index} sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
-                <Typography variant="body2" fontWeight="medium">
+                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
                   {exp.title}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {exp.company} {exp.location && `• ${exp.location}`}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" display="block">
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   {exp.start_date} - {exp.end_date || 'Present'}
                 </Typography>
                 {index < Math.min(candidate.experience.length, 3) - 1 && (
@@ -198,20 +198,20 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <SchoolIcon color="primary" />
-              <Typography variant="subtitle1" fontWeight="medium">
+              <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
                 Education
               </Typography>
             </Box>
             {candidate.education.map((edu, index) => (
               <Box key={index}>
-                <Typography variant="body2" fontWeight="medium">
+                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
                   {edu.degree} {edu.field && `in ${edu.field}`}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {edu.institution}
                 </Typography>
                 {edu.graduation_date && (
-                  <Typography variant="caption" color="text.secondary" display="block">
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                     Graduated: {edu.graduation_date}
                   </Typography>
                 )}

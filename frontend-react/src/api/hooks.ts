@@ -2,7 +2,7 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
-  UseQueryOptions,
+  type UseQueryOptions,
 } from '@tanstack/react-query';
 import {
   uploadResume,
@@ -13,11 +13,11 @@ import {
   chat,
   getAuditLog,
   getStatus,
-  Candidate,
-  Job,
-  JobMatch,
-  UploadProgress,
-  AuditLogEntry,
+  type Candidate,
+  type Job,
+  type JobMatch,
+  type UploadProgress,
+  type AuditLogEntry,
 } from './client';
 
 // Query keys
@@ -32,12 +32,14 @@ export const queryKeys = {
   chat: (candidateId?: string) => ['chat', candidateId] as const,
 };
 
+type QueryOpts<T> = Omit<UseQueryOptions<T, Error>, 'queryKey' | 'queryFn'>;
+
 // Status query
-export const useStatus = (options?: UseQueryOptions<{
+export const useStatus = (options?: QueryOpts<{
   api_key_configured: boolean;
   smtp_configured: boolean;
   version: string;
-}, Error>) => {
+}>) => {
   return useQuery({
     queryKey: queryKeys.status,
     queryFn: getStatus,
@@ -48,7 +50,7 @@ export const useStatus = (options?: UseQueryOptions<{
 };
 
 // Candidate queries
-export const useCandidate = (id: string, options?: UseQueryOptions<Candidate, Error>) => {
+export const useCandidate = (id: string, options?: QueryOpts<Candidate>) => {
   return useQuery({
     queryKey: queryKeys.candidate(id),
     queryFn: () => getCandidate(id),
@@ -70,8 +72,7 @@ export const useUploadResume = () => {
       file: File;
       onProgress?: (progress: UploadProgress) => void;
     }) => {
-      const { data } = await uploadResume(file, onProgress);
-      return data;
+      return await uploadResume(file, onProgress);
     },
     onSuccess: (data) => {
       // Invalidate relevant queries
@@ -83,7 +84,7 @@ export const useUploadResume = () => {
 };
 
 // Jobs queries
-export const useJobs = (options?: UseQueryOptions<Job[], Error>) => {
+export const useJobs = (options?: QueryOpts<Job[]>) => {
   return useQuery({
     queryKey: queryKeys.jobs,
     queryFn: listJobs,
@@ -93,7 +94,7 @@ export const useJobs = (options?: UseQueryOptions<Job[], Error>) => {
   });
 };
 
-export const useJob = (id: string, options?: UseQueryOptions<Job, Error>) => {
+export const useJob = (id: string, options?: QueryOpts<Job>) => {
   return useQuery({
     queryKey: queryKeys.job(id),
     queryFn: () => getJob(id),
@@ -109,25 +110,23 @@ export const useMatchJobs = () => {
 
   return useMutation({
     mutationFn: async (candidateId: string) => {
-      const { data } = await matchJobs(candidateId);
-      return data.matches;
+      const result = await matchJobs(candidateId);
+      return result.matches;
     },
     onSuccess: (matches, candidateId) => {
-      // Set the matches in the cache
       queryClient.setQueryData(queryKeys.matches(candidateId), matches);
     },
   });
 };
 
 // Matches query
-export const useMatches = (candidateId: string, options?: UseQueryOptions<JobMatch[], Error>) => {
+export const useMatches = (candidateId: string, options?: QueryOpts<JobMatch[]>) => {
   return useQuery({
     queryKey: queryKeys.matches(candidateId),
     queryFn: async () => {
-      const { data } = await matchJobs(candidateId);
-      return data.matches;
+      const result = await matchJobs(candidateId);
+      return result.matches;
     },
-    enabled: !!candidateId,
     retry: 2,
     ...options,
   });
@@ -145,8 +144,7 @@ export const useChat = () => {
       candidateId?: string;
       sendConfirmed?: boolean;
     }) => {
-      const { data } = await chat(messages, candidateId, sendConfirmed);
-      return data;
+      return await chat(messages, candidateId, sendConfirmed);
     },
   });
 };
@@ -155,7 +153,7 @@ export const useChat = () => {
 export const useAuditLog = (
   limit = 20,
   candidateId?: string,
-  options?: UseQueryOptions<AuditLogEntry[], Error>
+  options?: QueryOpts<AuditLogEntry[]>
 ) => {
   return useQuery({
     queryKey: queryKeys.auditLog(limit, candidateId),

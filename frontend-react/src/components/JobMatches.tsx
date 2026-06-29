@@ -53,7 +53,6 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
     data: matches,
     isLoading,
     isError,
-    error,
   } = useMatches(candidateId || '', {
     enabled: !!candidateId,
   });
@@ -176,7 +175,7 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
                     },
                   }}
                 />
-                <Typography variant="body2" fontWeight="medium">
+                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
                   {Math.round(match.match_score * 100)}%
                 </Typography>
               </Box>
