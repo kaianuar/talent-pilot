@@ -1,0 +1,44 @@
+# Pre-push: full verification of both frontend and backend
+# Runs before pushing to remote
+
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+
+echo "🚀 Running pre-push checks..."
+
+# Frontend: full type-check + build
+echo "  → frontend: tsc + vite build"
+cd "$ROOT/frontend-react" && npm run build
+
+# Backend: run all tests
+echo "  → backend: pytest"
+cd "$ROOT"
+
+TEST_RAN=0
+
+# Try pyenv Python versions first (most reliable in development)
+for ver in 3.12 3.11 3.13; do
+  PYBIN="$HOME/.pyenv/versions/${ver}.*/bin/python"
+  PYBIN=$(ls $PYBIN 2>/dev/null | head -1)
+  if [ -n "$PYBIN" ] && "$PYBIN" -c "import pytest" 2>/dev/null; then
+    "$PYBIN" -m pytest tests/ -x --tb=short -q && TEST_RAN=1
+    break
+  fi
+done
+
+# Fallback: try python/python3 on PATH
+if [ "$TEST_RAN" -eq 0 ]; then
+  for py in python python3; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c "import pytest" 2>/dev/null; then
+      "$py" -m pytest tests/ -x --tb=short -q && TEST_RAN=1
+      break
+    fi
+  done
+fi
+
+if [ "$TEST_RAN" -eq 0 ]; then
+  echo "❌ pytest not found. Install with: pip install pytest"
+  exit 1
+fi
+
+echo "✅ Pre-push checks passed"

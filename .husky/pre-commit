@@ -1,0 +1,25 @@
+# Pre-commit: fast checks for both frontend and backend
+# Runs on staged files only, should complete in <5s
+
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+
+echo "🔍 Running pre-commit checks..."
+
+# Frontend: oxlint (fast, catches type issues and code smells)
+echo "  → frontend: oxlint"
+cd "$ROOT/frontend-react" && npx oxlint --quiet
+
+# Backend: check staged Python files compile
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+if [ -n "$STAGED_PY" ]; then
+  echo "  → backend: checking Python syntax"
+  for file in $STAGED_PY; do
+    python3 -m py_compile "$ROOT/$file" 2>/dev/null || {
+      echo "❌ Python syntax error in $file"
+      exit 1
+    }
+  done
+fi
+
+echo "✅ Pre-commit checks passed"

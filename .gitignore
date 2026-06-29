@@ -132,3 +132,6 @@ data/uploads/
 *.log
 .DS_Store
 .qwen_hackathon.env
+
+# Husky / Node (root)
+node_modules/
