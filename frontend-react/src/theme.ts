@@ -1,14 +1,13 @@
 import { createTheme, responsiveFontSizes } from '@mui/material/styles';
 
-// Modern earthy palette
+// Earthy color palette
 const palette = {
-  cream: '#EDEEC0',        // page background
-  darkKhaki: '#433E0E',    // text, headers, primary
-  dustyOlive: '#7C9082',   // primary accent, buttons
-  drySage: '#A7A284',      // secondary, borders, muted text
-  lightSage: '#D0C88E',    // hover states, subtle highlights
-  white: '#FFFFFF',        // card backgrounds
-  nearBlack: '#1A1A1A',    // high contrast text
+  cream: '#EDEEC0',
+  darkKhaki: '#433E0E',
+  dustyOlive: '#7C9082',
+  drySage: '#A7A284',
+  lightSage: '#D0C88E',
+  white: '#FFFFFF',
 };
 
 let theme = createTheme({
@@ -17,20 +16,20 @@ let theme = createTheme({
       main: palette.dustyOlive,
       light: palette.drySage,
       dark: '#5A7060',
-      contrastText: '#FFFFFF',
+      contrastText: palette.white,
     },
     secondary: {
       main: palette.drySage,
       light: palette.lightSage,
       dark: '#8A8264',
-      contrastText: palette.nearBlack,
+      contrastText: palette.darkKhaki,
     },
     background: {
       default: palette.cream,
-      paper: palette.white,
+      paper: palette.lightSage,
     },
     text: {
-      primary: palette.nearBlack,
+      primary: palette.darkKhaki,
       secondary: palette.dustyOlive,
     },
     divider: palette.drySage,
@@ -54,7 +53,6 @@ let theme = createTheme({
         root: {
           borderRadius: 8,
           padding: '8px 20px',
-          transition: 'all 0.2s ease',
         },
         contained: {
           boxShadow: 'none',
@@ -72,18 +70,6 @@ let theme = createTheme({
           borderRadius: 12,
           backgroundImage: 'none',
         },
-        elevation1: {
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-        },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          bgcolor: palette.white,
-          color: palette.nearBlack,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        },
       },
     },
     MuiChip: {
@@ -96,7 +82,6 @@ let theme = createTheme({
         root: {
           '& .MuiOutlinedInput-root': {
             borderRadius: 8,
-            bgcolor: palette.white,
           },
         },
       },
@@ -105,7 +90,6 @@ let theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 12,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
         },
       },
     },

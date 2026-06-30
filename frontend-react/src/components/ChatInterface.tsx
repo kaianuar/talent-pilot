@@ -150,8 +150,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Messages Area */}
-      <Paper
-        elevation={0}
+      <Box
         sx={{
           flex: 1,
           overflow: 'auto',
@@ -174,7 +173,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 bgcolor: message.role === 'user' ? 'primary.main' : 'secondary.main',
                 width: 36,
                 height: 36,
-                boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
               }}
             >
               {message.role === 'user' ? <PersonIcon sx={{ fontSize: 20 }} /> : <SmartToyIcon sx={{ fontSize: 20 }} />}
@@ -187,9 +185,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 bgcolor: message.role === 'user' ? 'primary.main' : 'background.paper',
                 color: message.role === 'user' ? 'primary.contrastText' : 'text.primary',
                 borderRadius: message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                boxShadow: message.role === 'user'
-                  ? '0 2px 8px rgba(107,77,87,0.2)'
-                  : '0 1px 3px rgba(19,7,12,0.05)',
               }}
             >
               <Typography
@@ -223,7 +218,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
 
         <div ref={messagesEndRef} />
-      </Paper>
+      </Box>
 
       {/* Error display */}
       {uploadMutation.isError && (
@@ -233,10 +228,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )}
 
       {/* Input Area */}
-      <Paper
-        elevation={0}
+      <Box
         sx={{
           p: 2,
+          bgcolor: 'background.paper',
           borderTop: '1px solid',
           borderColor: 'divider',
         }}
@@ -362,7 +357,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </Box>
           </Box>
         )}
-      </Paper>
+      </Box>
     </Box>
   );
 };

@@ -50,10 +50,10 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#EDEEC0' }}>
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       {/* Header */}
       <Box sx={{
-        bgcolor: '#EDEEC0',
+        bgcolor: 'background.default',
         py: 1.5,
         px: 3,
         display: 'flex',
@@ -61,25 +61,25 @@ const AppContent: React.FC = () => {
         justifyContent: 'space-between',
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <SmartToyIcon sx={{ color: '#433E0E', fontSize: 28 }} />
-          <Typography variant="h6" sx={{ fontWeight: 700, color: '#433E0E', letterSpacing: '-0.01em' }}>
+          <SmartToyIcon sx={{ color: 'text.primary', fontSize: 28 }} />
+          <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', letterSpacing: '-0.01em' }}>
             TalentPilot
           </Typography>
         </Box>
         {candidateId && (
-          <Chip label="Profile Active" size="small" sx={{ bgcolor: '#7C9082', color: 'white' }} />
+          <Chip label="Profile Active" size="small" sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }} />
         )}
       </Box>
 
       {/* Main Content */}
       <Box sx={{ flex: 1, p: 2, display: 'flex', gap: 2, overflow: 'hidden' }}>
-        {/* Chat Area - rounded corners ok */}
+        {/* Chat Area */}
         <Box sx={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
           borderRadius: 3,
-          bgcolor: '#D0C88E',
+          bgcolor: 'background.paper',
           overflow: 'hidden',
         }}>
           <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
@@ -98,14 +98,14 @@ const AppContent: React.FC = () => {
           </React.Suspense>
         </Box>
 
-        {/* Sidebar - square corners for scrollable content */}
+        {/* Sidebar */}
         <Box sx={{ width: 380, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Box sx={{ flex: 1, bgcolor: '#D0C88E', overflow: 'auto' }}>
+          <Box sx={{ flex: 1, bgcolor: 'background.paper', overflow: 'auto' }}>
             <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
               <JobMatches candidateId={candidateId} />
             </React.Suspense>
           </Box>
-          <Box sx={{ flex: 1, bgcolor: '#D0C88E', overflow: 'auto' }}>
+          <Box sx={{ flex: 1, bgcolor: 'background.paper', overflow: 'auto' }}>
             <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
               <CandidateProfile candidateId={candidateId} />
             </React.Suspense>
