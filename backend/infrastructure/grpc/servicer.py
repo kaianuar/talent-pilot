@@ -89,6 +89,18 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             reasoning=assessment.reasoning,
         )
     
+    def _to_proto_answer_assessment(self, assessment: AnswerAssessment, question_id: str = "") -> screening_pb2.AnswerAssessment:
+        """Convert domain AnswerAssessment to protobuf AnswerAssessment (for SubmitAnswer)."""
+        return screening_pb2.AnswerAssessment(
+            question_id=question_id,
+            quality=assessment.quality.value,
+            confidence=assessment.confidence,
+            key_points_identified=assessment.key_points_identified,
+            gaps_identified=assessment.gaps_identified,
+            decision=assessment.decision.value,
+            reasoning=assessment.reasoning,
+        )
+    
     def _to_proto_email_draft(self, draft: Dict[str, str]) -> screening_pb2.EmailDraft:
         """Convert email draft dict to protobuf EmailDraft."""
         return screening_pb2.EmailDraft(
@@ -105,7 +117,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
         status: str,
     ) -> screening_pb2.ScreeningProgressUpdate:
         """Create a progress update from session state."""
-        current_question = session.question_index
+        current_question = session.current_question_index
         total = len(session.question_nodes)
         progress = (current_question / max(total, 1)) * 100 if total > 0 else 0
         
@@ -158,7 +170,8 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             # Store session
             self._sessions[session.id] = session
             
-            # Get first question
+            # Get first question - need to ask it first to transition state
+            first_question_text = session.ask_current_question()
             first_question = None
             if session.question_nodes:
                 first_node = session.question_nodes[0]
@@ -195,7 +208,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
                 context.set_details("Screening session not found")
                 return screening_pb2.GetNextQuestionResponse()
             
-            current_idx = session.question_index
+            current_idx = session.current_question_index
             total = len(session.question_nodes)
             
             if current_idx >= total:
@@ -258,7 +271,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             orchestrator._session = session
             
             # Get current question
-            current_idx = session.question_index
+            current_idx = session.current_question_index
             if current_idx >= len(session.question_nodes):
                 # Session is complete
                 result = orchestrator.get_screening_result()
@@ -275,35 +288,43 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
                 context.set_details("No current question found")
                 return screening_pb2.SubmitAnswerResponse()
             
-            # Submit answer
-            result = orchestrator.submit_answer(
-                question_id=request.question_id,
+            # Submit answer to the session
+            answer = orchestrator.receive_answer(
+                session=session,
                 answer_text=request.answer_text,
-                response_time_seconds=request.response_time_seconds if request.response_time_seconds > 0 else None,
             )
             
-            # Get assessment
-            assessment = None
-            if result.get('assessment'):
-                assessment = self._to_proto_assessment(result['assessment'])
+            # Assess and progress the session
+            assessment = orchestrator.assess_and_progress(session=session)
+            
+            # Convert assessment to proto (AnswerAssessment type for SubmitAnswer)
+            question_id = current_node.question.id if current_node.question else ""
+            proto_assessment = self._to_proto_answer_assessment(assessment, question_id) if assessment else None
             
             # Check if complete
-            is_complete = result.get('is_complete', False)
+            is_complete = session.status == ScreeningStatus.COMPLETE
             
             # Get next question if not complete
             next_question = None
-            if not is_complete and result.get('next_question'):
-                next_question = self._to_proto_question(result['next_question'])
+            if not is_complete and session.current_question:
+                # Ask the next question to transition state
+                session.ask_current_question()
+                next_question = self._to_proto_question(session.current_question)
             
             # Get email draft if complete
             email_draft = None
-            if is_complete and result.get('email_draft'):
-                email_draft = self._to_proto_email_draft(result['email_draft'])
+            if is_complete:
+                # Build email draft from session data
+                email_draft = screening_pb2.EmailDraft(
+                    to=f"recruiter@example.com",
+                    subject=f"Screening Result for {session.candidate_id}",
+                    body=f"Screening completed for {session.candidate_id}. Status: {session.status.value}",
+                )
             
             logger.info(f"SubmitAnswer completed for screening {request.screening_id}, is_complete={is_complete}")
             
             return screening_pb2.SubmitAnswerResponse(
-                assessment=assessment,
+                assessment=proto_assessment,
                 next_question=next_question,
                 is_complete=is_complete,
                 email_draft=email_draft,
@@ -337,7 +358,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
                 candidate_id=session.candidate_id,
                 job_id=session.job_id,
                 status=session.status.value,
-                total_questions_asked=session.question_index,
+                total_questions_asked=session.current_question_index,
                 final_assessment=session.termination_reason or "In Progress",
                 sufficient_evidence=session.sufficient_evidence,
                 termination_reason=session.termination_reason or "",
@@ -352,9 +373,9 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
                     qa = screening_pb2.QuestionAnswer(
                         question=self._to_proto_question(node.question),
                         answer_text=node.answer.text,
-                        assessment=self._to_proto_assessment(node.assessment) if node.assessment else None,
-                        response_time_seconds=str(node.answer.response_time_seconds) if node.answer.response_time_seconds else "0",
-                        timestamp=node.answer.timestamp.isoformat() if node.answer.timestamp else "",
+                        assessment=self._to_proto_answer_assessment(node.assessment, node.question.id) if node.assessment else None,
+                        response_time_seconds=str(node.answer.timestamp) if node.answer.timestamp else "0",
+                        timestamp=str(node.answer.timestamp) if node.answer.timestamp else "",
                     )
                     qa_history.append(qa)
             
