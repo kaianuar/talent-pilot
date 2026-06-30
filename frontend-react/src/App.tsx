@@ -50,39 +50,36 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#EDEEC0' }}>
       {/* Header */}
       <Box sx={{
-        bgcolor: 'white',
+        bgcolor: '#EDEEC0',
         py: 1.5,
         px: 3,
-        borderBottom: '1px solid',
-        borderColor: 'divider',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <SmartToyIcon sx={{ color: 'primary.main', fontSize: 28 }} />
-          <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', letterSpacing: '-0.01em' }}>
+          <SmartToyIcon sx={{ color: '#433E0E', fontSize: 28 }} />
+          <Typography variant="h6" sx={{ fontWeight: 700, color: '#433E0E', letterSpacing: '-0.01em' }}>
             TalentPilot
           </Typography>
         </Box>
         {candidateId && (
-          <Chip label="Profile Active" color="primary" size="small" sx={{ bgcolor: 'primary.light', color: 'white' }} />
+          <Chip label="Profile Active" size="small" sx={{ bgcolor: '#7C9082', color: 'white' }} />
         )}
       </Box>
 
       {/* Main Content */}
-      <Box sx={{ flex: 1, p: 3, display: 'flex', gap: 3, overflow: 'hidden' }}>
-        {/* Chat Area */}
+      <Box sx={{ flex: 1, p: 2, display: 'flex', gap: 2, overflow: 'hidden' }}>
+        {/* Chat Area - rounded corners ok */}
         <Box sx={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          borderRadius: 2,
-          bgcolor: 'background.paper',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          borderRadius: 3,
+          bgcolor: '#D0C88E',
           overflow: 'hidden',
         }}>
           <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
@@ -101,14 +98,14 @@ const AppContent: React.FC = () => {
           </React.Suspense>
         </Box>
 
-        {/* Sidebar */}
+        {/* Sidebar - square corners for scrollable content */}
         <Box sx={{ width: 380, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Box sx={{ flex: 1, borderRadius: 2, bgcolor: 'background.paper', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'auto' }}>
+          <Box sx={{ flex: 1, bgcolor: '#D0C88E', overflow: 'auto' }}>
             <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
               <JobMatches candidateId={candidateId} />
             </React.Suspense>
           </Box>
-          <Box sx={{ flex: 1, borderRadius: 2, bgcolor: 'background.paper', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'auto' }}>
+          <Box sx={{ flex: 1, bgcolor: '#D0C88E', overflow: 'auto' }}>
             <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
               <CandidateProfile candidateId={candidateId} />
             </React.Suspense>
