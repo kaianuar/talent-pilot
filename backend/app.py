@@ -53,7 +53,6 @@ from backend.config import (
 )
 from openai import OpenAI
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

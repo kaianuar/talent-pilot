@@ -9,13 +9,17 @@ import logging
 import signal
 from concurrent import futures
 from typing import Optional
+import sys
+from pathlib import Path
+
+# Ensure proto directory is on path (generated stubs use bare imports)
+_proto_dir = Path(__file__).resolve().parent / "proto"
+if str(_proto_dir) not in sys.path:
+    sys.path.insert(0, str(_proto_dir))
 
 import grpc
-
 from backend.infrastructure.grpc.proto import screening_pb2_grpc
 from backend.infrastructure.grpc.servicer import ScreeningServicer
-
-
 logger = logging.getLogger(__name__)
 
 
