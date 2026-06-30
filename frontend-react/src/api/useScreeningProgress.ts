@@ -50,16 +50,16 @@ export function useScreeningProgress({ screeningId, enabled = true }: UseScreeni
       try {
         const data = JSON.parse(event.data);
         if (data.message_type === 'heartbeat') return;
-        setProgress({
+        setProgress((prev) => ({
           screeningId: data.screening_id || screeningId,
           status: data.status || data.message_type || 'unknown',
-          currentQuestionNumber: data.current_question_number ?? progress?.currentQuestionNumber ?? 0,
-          totalQuestions: data.total_questions ?? progress?.totalQuestions ?? 3,
+          currentQuestionNumber: data.current_question_number ?? prev?.currentQuestionNumber ?? 0,
+          totalQuestions: data.total_questions ?? prev?.totalQuestions ?? 3,
           progressPercentage: data.progress_percentage ?? 0,
           currentQuestionText: data.current_question_text,
           latestAssessment: data.latest_assessment || data.assessment,
           timestamp: data.timestamp || new Date().toISOString(),
-        });
+        }));
       } catch {
         // Ignore malformed messages
       }
