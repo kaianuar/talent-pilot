@@ -3,10 +3,9 @@
 Translates gRPC-Web HTTP/1.1 requests from the browser into native gRPC
 calls to the screening service using grpc's insecure channel (h2c).
 """
-from datetime import datetime, timezone
 import asyncio
 import logging
-from typing import Any
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Response, HTTPException
 import grpc
@@ -15,8 +14,7 @@ from backend.infrastructure.grpc.proto import screening_pb2, screening_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
-# Maps gRPC method names to their handler functions
-METHOD_MAP: dict[str, Any] = {}
+GRPC_TIMEOUT = 30  # seconds
 
 
 class GRPCWebProxy:
@@ -43,57 +41,105 @@ class GRPCWebProxy:
             self._stub = screening_pb2_grpc.ScreeningServiceStub(self.channel)
         return self._stub
 
+    async def _ensure_channel_ready(self) -> None:
+        """Wait for the gRPC channel to be ready."""
+        try:
+            future = grpc.channel_ready_future(self.channel)
+            await asyncio.to_thread(future.result, timeout=5)
+        except grpc.FutureTimeoutError:
+            raise HTTPException(503, "gRPC server not ready")
+        except Exception as e:
+            logger.warning(f"Channel ready check failed: {e}")
+
     def _register_routes(self) -> None:
         """Register FastAPI routes for gRPC-Web proxy."""
 
-        @self.router.post("/talentpilot.screening.ScreeningService/{method}")
-        async def proxy_grpc_web(method: str, request: Request) -> Response:
+        @self.router.post(
+            "/talentpilot.screening.ScreeningService/{method}"
+        )
+        async def proxy_grpc_web(
+            method: str, request: Request
+        ) -> Response:
             """Proxy a gRPC-Web request to the gRPC ScreeningService."""
+            logger.info(f"gRPC-Web proxy: {method} called")
             try:
                 body = await request.body()
 
-                # Parse the gRPC-Web frame (5-byte header: 1 flag + 4 length)
+                # Parse the gRPC-Web frame (5-byte header)
                 if len(body) < 5:
-                    raise HTTPException(400, "Invalid gRPC-Web frame: too short")
+                    raise HTTPException(400, "Invalid gRPC-Web frame")
 
-                flag = body[0]
+                _flag = body[0]
                 msg_len = int.from_bytes(body[1:5], "big")
                 payload = body[5 : 5 + msg_len]
+
+                # Ensure channel is ready
+                await self._ensure_channel_ready()
 
                 # Route to the appropriate RPC method
                 if method == "StartScreening":
                     req = screening_pb2.StartScreeningRequest()
                     req.ParseFromString(payload)
-                    resp = await asyncio.to_thread(self.stub.StartScreening, req)
+                    resp = await asyncio.to_thread(
+                        self.stub.StartScreening, req, timeout=GRPC_TIMEOUT,
+                    )
                 elif method == "GetNextQuestion":
                     req = screening_pb2.GetNextQuestionRequest()
                     req.ParseFromString(payload)
-                    resp = await asyncio.to_thread(self.stub.GetNextQuestion, req)
+                    resp = await asyncio.to_thread(
+                        self.stub.GetNextQuestion, req, timeout=GRPC_TIMEOUT,
+                    )
                 elif method == "SubmitAnswer":
                     req = screening_pb2.SubmitAnswerRequest()
                     req.ParseFromString(payload)
-                    resp = await asyncio.to_thread(self.stub.SubmitAnswer, req)
+                    resp = await asyncio.to_thread(
+                        self.stub.SubmitAnswer, req, timeout=GRPC_TIMEOUT,
+                    )
                 elif method == "GetScreeningResult":
                     req = screening_pb2.GetScreeningResultRequest()
                     req.ParseFromString(payload)
-                    resp = await asyncio.to_thread(self.stub.GetScreeningResult, req)
+                    resp = await asyncio.to_thread(
+                        self.stub.GetScreeningResult, req, timeout=GRPC_TIMEOUT,
+                    )
                 else:
-                    raise HTTPException(404, f"Unknown gRPC method: {method}")
+                    raise HTTPException(404, f"Unknown method: {method}")
+
+                logger.info(f"gRPC-Web proxy: {method} succeeded")
 
                 # Encode response as gRPC-Web frame
                 resp_bytes = resp.SerializeToString()
-                frame = bytes([0]) + len(resp_bytes).to_bytes(4, "big") + resp_bytes
+                frame = (
+                    bytes([0])
+                    + len(resp_bytes).to_bytes(4, "big")
+                    + resp_bytes
+                )
+
+                # gRPC-Web requires status headers for the client to parse
+                # the response properly
                 return Response(
                     content=frame,
                     status_code=200,
-                    headers={"Content-Type": "application/grpc-web+proto"},
+                    headers={
+                        "Content-Type": "application/grpc-web+proto",
+                        "grpc-status": "0",
+                        "grpc-message": "",
+                    },
                 )
 
+            except HTTPException:
+                raise
             except grpc.RpcError as e:
-                logger.error(f"gRPC error calling {method}: {e.code()} — {e.details()}")
-                raise HTTPException(502, f"gRPC error: {e.details()}")
+                logger.error(
+                    f"gRPC error calling {method}: "
+                    f"code={e.code()}, details={e.details()}"
+                )
+                raise HTTPException(
+                    502, f"gRPC error: {e.details()}"
+                )
             except Exception as e:
-                logger.exception(f"Error proxying gRPC-Web request: {e}")
+                logger.exception(
+                    f"Error proxying gRPC-Web request: {e}"
+                )
                 raise HTTPException(500, f"Proxy error: {str(e)}")
 
         @self.router.get("/health")
