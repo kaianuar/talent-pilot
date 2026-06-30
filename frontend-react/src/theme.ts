@@ -1,38 +1,39 @@
 import { createTheme, responsiveFontSizes } from '@mui/material/styles';
 
-// Earthy color palette
+// Blue color palette
 const palette = {
-  cream: '#EDEEC0',
-  darkKhaki: '#433E0E',
-  dustyOlive: '#7C9082',
-  drySage: '#A7A284',
-  lightSage: '#D0C88E',
+  lightBlue: '#a3c7e0',    // backgrounds, subtle highlights
+  viking: '#73b0d9',       // secondary accents, borders
+  bostonBlue: '#4a8fc4',   // primary actions, buttons
+  jellyBean: '#2b699c',    // primary dark, hover states
+  blumine: '#1f507a',      // text, headers, dark accents
   white: '#FFFFFF',
+  nearBlack: '#1A1A1A',
 };
 
 let theme = createTheme({
   palette: {
     primary: {
-      main: palette.dustyOlive,
-      light: palette.drySage,
-      dark: '#5A7060',
+      main: palette.bostonBlue,
+      light: palette.viking,
+      dark: palette.jellyBean,
       contrastText: palette.white,
     },
     secondary: {
-      main: palette.drySage,
-      light: palette.lightSage,
-      dark: '#8A8264',
-      contrastText: palette.darkKhaki,
+      main: palette.viking,
+      light: palette.lightBlue,
+      dark: palette.bostonBlue,
+      contrastText: palette.white,
     },
     background: {
-      default: palette.cream,
-      paper: palette.lightSage,
+      default: palette.lightBlue,
+      paper: palette.white,
     },
     text: {
-      primary: palette.darkKhaki,
-      secondary: palette.dustyOlive,
+      primary: palette.blumine,
+      secondary: palette.jellyBean,
     },
-    divider: palette.drySage,
+    divider: palette.viking,
   },
   typography: {
     fontFamily: '"Inter", "system-ui", "-apple-system", sans-serif',
@@ -56,11 +57,11 @@ let theme = createTheme({
         },
         contained: {
           boxShadow: 'none',
-          '&:hover': { boxShadow: '0 2px 8px rgba(124,144,130,0.3)' },
+          '&:hover': { boxShadow: '0 2px 8px rgba(74,143,196,0.3)' },
         },
         outlined: {
-          borderColor: palette.dustyOlive,
-          '&:hover': { bgcolor: `${palette.dustyOlive}10` },
+          borderColor: palette.bostonBlue,
+          '&:hover': { bgcolor: `${palette.bostonBlue}10` },
         },
       },
     },
