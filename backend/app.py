@@ -41,6 +41,7 @@ except ImportError:
     start_dual_server = None  # type: ignore
     ScreeningServicer = None  # type: ignore
     _grpc_available = False
+from backend.infrastructure.grpc.web_proxy import GRPCWebProxy
 from backend.infrastructure.websocket.manager import ConnectionManager
 from backend.infrastructure.websocket.routes import router as websocket_router
 
@@ -130,7 +131,12 @@ def create_app() -> FastAPI:
     
     # Include WebSocket routes
     app.include_router(websocket_router)
-    
+
+    # Include gRPC-Web proxy routes (translates HTTP/1.1 to gRPC for browser clients)
+    grpc_web_proxy = GRPCWebProxy(grpc_target="localhost:50051")
+    app.include_router(grpc_web_proxy.router)
+    app.state.grpc_web_proxy = grpc_web_proxy
+
     return app
 
 
