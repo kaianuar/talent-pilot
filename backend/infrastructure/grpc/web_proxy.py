@@ -4,6 +4,7 @@ Translates gRPC-Web HTTP/1.1 requests from the browser into native gRPC
 calls to the screening service using grpc's insecure channel (h2c).
 """
 from datetime import datetime, timezone
+import asyncio
 import logging
 from typing import Any
 
@@ -63,25 +64,24 @@ class GRPCWebProxy:
                 if method == "StartScreening":
                     req = screening_pb2.StartScreeningRequest()
                     req.ParseFromString(payload)
-                    resp = self.stub.StartScreening(req)
+                    resp = await asyncio.to_thread(self.stub.StartScreening, req)
                 elif method == "GetNextQuestion":
                     req = screening_pb2.GetNextQuestionRequest()
                     req.ParseFromString(payload)
-                    resp = self.stub.GetNextQuestion(req)
+                    resp = await asyncio.to_thread(self.stub.GetNextQuestion, req)
                 elif method == "SubmitAnswer":
                     req = screening_pb2.SubmitAnswerRequest()
                     req.ParseFromString(payload)
-                    resp = self.stub.SubmitAnswer(req)
+                    resp = await asyncio.to_thread(self.stub.SubmitAnswer, req)
                 elif method == "GetScreeningResult":
                     req = screening_pb2.GetScreeningResultRequest()
                     req.ParseFromString(payload)
-                    resp = self.stub.GetScreeningResult(req)
+                    resp = await asyncio.to_thread(self.stub.GetScreeningResult, req)
                 else:
                     raise HTTPException(404, f"Unknown gRPC method: {method}")
 
                 # Encode response as gRPC-Web frame
                 resp_bytes = resp.SerializeToString()
-                frame = bytes([0]) + len(resp_bytes).to_bytes(4, "big") + resp_bytes
 
                 return Response(
                     content=frame,
