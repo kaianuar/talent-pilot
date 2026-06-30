@@ -1,5 +1,5 @@
 # Pre-commit: fast checks for both frontend and backend
-# Runs on staged files only, should complete in <5s
+# Runs on staged files only, should complete in ~30s
 
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
@@ -20,6 +20,31 @@ if [ -n "$STAGED_PY" ]; then
       exit 1
     }
   done
+fi
+
+# Backend: run full test suite
+echo "  → backend: pytest"
+cd "$ROOT"
+TEST_RAN=0
+for ver in 3.12 3.11 3.13; do
+  PYBIN="$HOME/.pyenv/versions/${ver}.*/bin/python"
+  PYBIN=$(ls $PYBIN 2>/dev/null | head -1)
+  if [ -n "$PYBIN" ] && "$PYBIN" -c "import pytest" 2>/dev/null; then
+    "$PYBIN" -m pytest tests/ -x --tb=short -q && TEST_RAN=1
+    break
+  fi
+done
+if [ "$TEST_RAN" -eq 0 ]; then
+  for py in python python3; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c "import pytest" 2>/dev/null; then
+      "$py" -m pytest tests/ -x --tb=short -q && TEST_RAN=1
+      break
+    fi
+  done
+fi
+if [ "$TEST_RAN" -eq 0 ]; then
+  echo "❌ pytest not found. Install with: pip install pytest"
+  exit 1
 fi
 
 echo "✅ Pre-commit checks passed"
