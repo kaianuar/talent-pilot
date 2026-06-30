@@ -125,7 +125,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       const successMessage: Message = {
         role: 'assistant',
-        content: `Great! I've successfully parsed your CV. Welcome, ${result.parsed.name}!\n\nI found ${result.parsed.skills.length} skills and ${result.parsed.years_experience} years of experience. Let me find matching jobs for you!`,
+        content: `Great! I've successfully parsed your CV. Welcome, ${result.parsed.name}!\n\nI found ${result.parsed.skills.length} skills and ${result.parsed.years_experience} years of experience. I've matched you against 32 open positions — check the panel on the right and **click a job** to start your screening interview!`,
         timestamp: new Date(),
       };
 

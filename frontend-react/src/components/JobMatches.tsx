@@ -198,6 +198,19 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
                 />
               )}
             </Box>
+            <Button
+              variant="contained"
+              size="small"
+              color="primary"
+              fullWidth
+              sx={{ mt: 1.5 }}
+              onClick={(e) => {
+                e.stopPropagation(); // prevent duplicate card onClick
+                useAppStore.getState().setSelectedJob(match.job_id, match.job_title);
+              }}
+            >
+              Start Screening
+            </Button>
           </CardContent>
         </Card>
       ))}

@@ -28,7 +28,7 @@ from backend.services import (
     create_application,
     update_application,
 )
-from backend.services.resume_parser import parse_resume, ResumeParseError
+from backend.services.resume_parser import parse_resume_from_file, ResumeParseError
 from backend.services.email import send_email, EmailSendError
 
 # gRPC and WebSocket imports — gRPC is optional (proto may not be compiled)
@@ -190,7 +190,7 @@ async def upload_cv(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted")
     
-    candidate = create_candidate(name=file.filename)
+    candidate = create_candidate(name=file.filename, email="pending@upload.local")
     
     pdf_path = Path("uploads") / f"{candidate['id']}.pdf"
     pdf_path.parent.mkdir(exist_ok=True)
@@ -200,7 +200,7 @@ async def upload_cv(file: UploadFile = File(...)):
         f.write(content)
     
     try:
-        parsed = parse_resume(str(pdf_path))
+        parsed = parse_resume_from_file(str(pdf_path))
         save_parsed_resume(candidate["id"], parsed)
     except ResumeParseError as e:
         raise HTTPException(400, f"Failed to parse resume: {e}")
