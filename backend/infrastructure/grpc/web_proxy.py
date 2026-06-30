@@ -1,187 +1,101 @@
 """gRPC-Web proxy for browser support.
 
-gRPC-Web is a protocol that allows gRPC to be used from browser-based clients
-using HTTP/1.1. This proxy translates between gRPC-Web requests and gRPC
-requests, allowing the same gRPC service to serve both native and web clients.
-
-Reference: https://github.com/grpc/grpc-web
+Translates gRPC-Web HTTP/1.1 requests from the browser into native gRPC
+calls to the screening service using grpc's insecure channel (h2c).
 """
-
 from datetime import datetime, timezone
-import asyncio
-import json
 import logging
-from typing import Dict, Any, Optional, Callable, Awaitable
-from dataclasses import dataclass
-from enum import Enum
+from typing import Any
 
-from fastapi import APIRouter, Request, Response, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse, JSONResponse
-import httpx
+from fastapi import APIRouter, Request, Response, HTTPException
+import grpc
 
+from backend.infrastructure.grpc.proto import screening_pb2, screening_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
-
-class GRPCWebContentType(str, Enum):
-    """gRPC-Web content types."""
-    PROTO = "application/grpc-web"
-    PROTO_TEXT = "application/grpc-web-text"
-    JSON = "application/grpc-web+json"
-
-
-@dataclass
-class GRPCWebFrame:
-    """A gRPC-Web frame.
-    
-    gRPC-Web uses a framing protocol where messages are wrapped in frames:
-    - 1 byte: flags (compressed, etc.)
-    - 4 bytes: message length (big-endian)
-    - N bytes: message data (protobuf or JSON)
-    """
-    flags: int
-    message: bytes
-    
-    @classmethod
-    def from_bytes(cls, data: bytes) -> "GRPCWebFrame":
-        """Parse a frame from bytes."""
-        if len(data) < 5:
-            raise ValueError(f"Frame too short: {len(data)} bytes")
-        
-        flags = data[0]
-        length = int.from_bytes(data[1:5], byteorder="big")
-        message = data[5:5+length]
-        
-        return cls(flags=flags, message=message)
-    
-    def to_bytes(self) -> bytes:
-        """Serialize frame to bytes."""
-        length_bytes = len(self.message).to_bytes(4, byteorder="big")
-        return bytes([self.flags]) + length_bytes + self.message
+# Maps gRPC method names to their handler functions
+METHOD_MAP: dict[str, Any] = {}
 
 
 class GRPCWebProxy:
-    """gRPC-Web proxy for browser clients.
-    
-    This proxy translates gRPC-Web requests (HTTP/1.1 + binary or JSON framing)
-    to gRPC requests (HTTP/2 + protobuf), allowing the same gRPC service to
-    serve both native and web clients.
-    """
-    
-    def __init__(
-        self,
-        grpc_target: str = "localhost:50051",
-        timeout: float = 30.0,
-    ):
-        """Initialize the gRPC-Web proxy.
-        
-        Args:
-            grpc_target: The gRPC server target (host:port)
-            timeout: Request timeout in seconds
-        """
+    """gRPC-Web proxy that bridges browser HTTP/1.1 to native gRPC."""
+
+    def __init__(self, grpc_target: str = "localhost:50051"):
         self.grpc_target = grpc_target
-        self.timeout = timeout
-        
-        # Create HTTP client for proxying to gRPC server
-        self._client = httpx.AsyncClient(
-            http2=True,  # Enable HTTP/2 for gRPC
-            timeout=httpx.Timeout(timeout),
-        )
-        
-        # Create FastAPI router
+        self._channel: grpc.Channel | None = None
+        self._stub: screening_pb2_grpc.ScreeningServiceStub | None = None
+
         self.router = APIRouter(prefix="/grpc-web", tags=["grpc-web"])
-        
-        # Register routes
         self._register_routes()
-        
         logger.info(f"gRPC-Web proxy initialized, targeting {grpc_target}")
-    
+
+    @property
+    def channel(self) -> grpc.Channel:
+        if self._channel is None:
+            self._channel = grpc.insecure_channel(self.grpc_target)
+        return self._channel
+
+    @property
+    def stub(self) -> screening_pb2_grpc.ScreeningServiceStub:
+        if self._stub is None:
+            self._stub = screening_pb2_grpc.ScreeningServiceStub(self.channel)
+        return self._stub
+
     def _register_routes(self) -> None:
         """Register FastAPI routes for gRPC-Web proxy."""
-        
-        @self.router.post("/{service}/{method}")
-        async def proxy_grpc_web(
-            service: str,
-            method: str,
-            request: Request,
-            background_tasks: BackgroundTasks,
-        ) -> Response:
-            """Proxy gRPC-Web request to gRPC server."""
-            
-            # Read request body
-            body = await request.body()
-            
-            # Determine content type
-            content_type = request.headers.get("content-type", "")
-            accept = request.headers.get("accept", "")
-            
-            # Parse gRPC-Web request
-            if "grpc-web-text" in content_type or "grpc-web-text" in accept:
-                # Base64-encoded framing
-                import base64
-                try:
-                    body = base64.b64decode(body)
-                except Exception as e:
-                    logger.error(f"Failed to decode base64 gRPC-Web request: {e}")
-                    raise HTTPException(400, "Invalid base64 encoding")
-            
-            # Build gRPC request
-            # gRPC uses HTTP/2 with specific headers
-            grpc_headers = {
-                "Content-Type": "application/grpc",
-                "TE": "trailers",
-                # Add any custom metadata from the gRPC-Web request
-            }
-            
-            # Copy relevant headers from gRPC-Web request
-            for header in ["x-grpc-web", "x-user-agent"]:
-                if header in request.headers:
-                    grpc_headers[header] = request.headers[header]
-            
-            # Build gRPC URL
-            # gRPC uses the path format: /{package}.{service}/{method}
-            # For simplicity, we assume the service name matches
-            grpc_url = f"http://{self.grpc_target}/{service}/{method}"
-            
+
+        @self.router.post("/talentpilot.screening.ScreeningService/{method}")
+        async def proxy_grpc_web(method: str, request: Request) -> Response:
+            """Proxy a gRPC-Web request to the gRPC ScreeningService."""
             try:
-                # Forward request to gRPC server
-                grpc_response = await self._client.post(
-                    grpc_url,
-                    content=body,
-                    headers=grpc_headers,
-                )
-                
-                # Read response body
-                response_body = grpc_response.content
-                
-                # Determine response content type
-                response_content_type = "application/grpc-web"
-                if "grpc-web-text" in accept:
-                    # Encode as base64 for text mode
-                    import base64
-                    response_body = base64.b64encode(response_body)
-                    response_content_type = "application/grpc-web-text"
-                
-                # Build response
-                response_headers = dict(grpc_response.headers)
-                response_headers["content-type"] = response_content_type
-                
+                body = await request.body()
+
+                # Parse the gRPC-Web frame (5-byte header: 1 flag + 4 length)
+                if len(body) < 5:
+                    raise HTTPException(400, "Invalid gRPC-Web frame: too short")
+
+                flag = body[0]
+                msg_len = int.from_bytes(body[1:5], "big")
+                payload = body[5 : 5 + msg_len]
+
+                # Route to the appropriate RPC method
+                if method == "StartScreening":
+                    req = screening_pb2.StartScreeningRequest()
+                    req.ParseFromString(payload)
+                    resp = self.stub.StartScreening(req)
+                elif method == "GetNextQuestion":
+                    req = screening_pb2.GetNextQuestionRequest()
+                    req.ParseFromString(payload)
+                    resp = self.stub.GetNextQuestion(req)
+                elif method == "SubmitAnswer":
+                    req = screening_pb2.SubmitAnswerRequest()
+                    req.ParseFromString(payload)
+                    resp = self.stub.SubmitAnswer(req)
+                elif method == "GetScreeningResult":
+                    req = screening_pb2.GetScreeningResultRequest()
+                    req.ParseFromString(payload)
+                    resp = self.stub.GetScreeningResult(req)
+                else:
+                    raise HTTPException(404, f"Unknown gRPC method: {method}")
+
+                # Encode response as gRPC-Web frame
+                resp_bytes = resp.SerializeToString()
+                frame = bytes([0]) + len(resp_bytes).to_bytes(4, "big") + resp_bytes
+
                 return Response(
-                    content=response_body,
-                    status_code=grpc_response.status_code,
-                    headers=response_headers,
+                    content=frame,
+                    status_code=200,
+                    headers={"Content-Type": "application/grpc-web+proto"},
                 )
-                
-            except httpx.TimeoutException:
-                logger.error(f"Timeout proxying request to {grpc_url}")
-                raise HTTPException(504, "Gateway timeout")
-            except httpx.ConnectError as e:
-                logger.error(f"Failed to connect to gRPC server at {self.grpc_target}: {e}")
-                raise HTTPException(503, "gRPC server unavailable")
+
+            except grpc.RpcError as e:
+                logger.error(f"gRPC error calling {method}: {e.code()} — {e.details()}")
+                raise HTTPException(502, f"gRPC error: {e.details()}")
             except Exception as e:
-                logger.exception(f"Error proxying gRPC request: {e}")
+                logger.exception(f"Error proxying gRPC-Web request: {e}")
                 raise HTTPException(500, f"Proxy error: {str(e)}")
-        
+
         @self.router.get("/health")
         async def health_check() -> dict:
             """Health check endpoint for gRPC-Web proxy."""
@@ -190,27 +104,11 @@ class GRPCWebProxy:
                 "grpc_target": self.grpc_target,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-    
+
     async def close(self) -> None:
-        """Close the proxy and release resources."""
-        await self._client.aclose()
-        logger.info("gRPC-Web proxy closed")
-
-
-def create_grpc_web_proxy(
-    grpc_target: str = "localhost:50051",
-    timeout: float = 30.0,
-) -> GRPCWebProxy:
-    """Create a gRPC-Web proxy instance.
-    
-    Args:
-        grpc_target: The gRPC server target (host:port)
-        timeout: Request timeout in seconds
-        
-    Returns:
-        GRPCWebProxy instance
-    """
-    return GRPCWebProxy(
-        grpc_target=grpc_target,
-        timeout=timeout,
-    )
+        """Close the gRPC channel."""
+        if self._channel:
+            self._channel.close()
+            self._channel = None
+            self._stub = None
+            logger.info("gRPC-Web proxy closed")
