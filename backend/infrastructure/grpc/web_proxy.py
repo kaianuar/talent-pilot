@@ -108,33 +108,51 @@ class GRPCWebProxy:
 
                 # Encode response as gRPC-Web frame
                 resp_bytes = resp.SerializeToString()
-                frame = (
+                msg_frame = (
                     bytes([0])
                     + len(resp_bytes).to_bytes(4, "big")
                     + resp_bytes
                 )
 
-                # gRPC-Web requires status headers for the client to parse
-                # the response properly
+                # gRPC-Web binary format requires trailer frame in the body
+                # (flag=0x80) with gRPC status headers
+                trailer_bytes = b"grpc-status: 0\r\ngrpc-message: \r\n"
+                trailer_frame = (
+                    bytes([0x80])
+                    + len(trailer_bytes).to_bytes(4, "big")
+                    + trailer_bytes
+                )
+
                 return Response(
-                    content=frame,
+                    content=msg_frame + trailer_frame,
                     status_code=200,
                     headers={
                         "Content-Type": "application/grpc-web+proto",
-                        "grpc-status": "0",
-                        "grpc-message": "",
                     },
                 )
 
-            except HTTPException:
-                raise
             except grpc.RpcError as e:
                 logger.error(
                     f"gRPC error calling {method}: "
                     f"code={e.code()}, details={e.details()}"
                 )
-                raise HTTPException(
-                    502, f"gRPC error: {e.details()}"
+                # Return gRPC-Web error with trailer frame
+                error_status = str(e.code().value[0])
+                error_trailer = (
+                    f"grpc-status: {error_status}\r\n"
+                    f"grpc-message: {e.details()}\r\n"
+                ).encode()
+                trailer_frame = (
+                    bytes([0x80])
+                    + len(error_trailer).to_bytes(4, "big")
+                    + error_trailer
+                )
+                return Response(
+                    content=trailer_frame,
+                    status_code=200,
+                    headers={
+                        "Content-Type": "application/grpc-web+proto",
+                    },
                 )
             except Exception as e:
                 logger.exception(
