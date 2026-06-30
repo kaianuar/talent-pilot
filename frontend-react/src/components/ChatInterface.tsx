@@ -234,10 +234,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       {/* Input Area */}
       <Paper
-        elevation={2}
+        elevation={0}
         sx={{
           p: 2,
-          borderTop: 1,
+          borderTop: '1px solid',
           borderColor: 'divider',
         }}
       >
@@ -286,14 +286,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </IconButton>
         </Box>
 
-        {/* Helper chips */}
-        <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 0.75, mt: 1.5, flexWrap: 'wrap' }}>
           <Chip
             size="small"
             label="Show my matches"
             onClick={() => setInput('Show me my job matches')}
             variant="outlined"
             clickable
+            sx={{ borderColor: 'divider', '&:hover': { bgcolor: 'secondary.light', borderColor: 'secondary.main' } }}
           />
           <Chip
             size="small"
@@ -301,6 +301,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             onClick={() => setInput('I want to apply for a job')}
             variant="outlined"
             clickable
+            sx={{ borderColor: 'divider', '&:hover': { bgcolor: 'secondary.light', borderColor: 'secondary.main' } }}
           />
           <Chip
             size="small"
@@ -308,6 +309,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             onClick={() => setInput('Show my profile')}
             variant="outlined"
             clickable
+            sx={{ borderColor: 'divider', '&:hover': { bgcolor: 'secondary.light', borderColor: 'secondary.main' } }}
           />
         </Box>
 

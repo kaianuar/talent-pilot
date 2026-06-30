@@ -10,11 +10,13 @@ import {
   Alert,
   Skeleton,
   Tooltip,
+  Badge,
 } from '@mui/material';
 import WorkIcon from '@mui/icons-material/Work';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import { useMatches, useMatchJobs } from '../api/hooks';
 import { useAppStore } from '../store';
 import type { JobMatch } from '../api/client';
@@ -127,38 +129,70 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
   }
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h6">
-          Job Matches
-        </Typography>
-        <Chip
-          icon={<TrendingUpIcon />}
-          label={`${matches.length} matches`}
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'text.primary' }}>
+            Job Matches
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            Roles ranked by fit for this candidate
+          </Typography>
+        </Box>
+        <Badge
+          badgeContent={matches.length}
           color="primary"
-          size="small"
-        />
+          sx={{ '& .MuiBadge-badge': { fontWeight: 700, fontSize: '0.75rem', minWidth: 24, height: 24 } }}
+        >
+          <Chip
+            icon={<TrendingUpIcon />}
+            label="matches"
+            color="primary"
+            variant="outlined"
+            size="small"
+          />
+        </Badge>
       </Box>
 
       {matches.map((match) => (
-        <Card key={match.job_id} sx={{ mb: 2, '&:hover': { boxShadow: 4 }, cursor: 'pointer' }} onClick={() => useAppStore.getState().setSelectedJob(match.job_id, match.job_title)}>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-              <Typography variant="h6" component="div">
+        <Card
+          key={match.job_id}
+          elevation={1}
+          sx={{
+            mb: 2.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            cursor: 'pointer',
+            '&:hover': {
+              boxShadow: '0 8px 24px rgba(107,77,87,0.12)',
+              borderColor: 'primary.light',
+            },
+          }}
+          onClick={() => useAppStore.getState().setSelectedJob(match.job_id, match.job_title)}
+        >
+          <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary' }}>
                 {match.job_title}
               </Typography>
-              <Tooltip title={match.reasoning_explanation}>
+              <Tooltip title={match.reasoning_explanation} arrow>
                 <Chip
                   label={getMatchLabel(match.tier)}
                   color={getMatchColor(match.tier) as 'success' | 'warning' | 'error' | 'default'}
                   size="small"
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.7rem',
+                    height: 26,
+                    opacity: 0.9,
+                  }}
                 />
               </Tooltip>
             </Box>
 
-            <Box sx={{ mb: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 100 }}>
+            <Box sx={{ mb: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 100, fontWeight: 500 }}>
                   Match Score:
                 </Typography>
                 <LinearProgress
@@ -166,28 +200,30 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
                   value={match.match_score * 100}
                   sx={{
                     flex: 1,
-                    mr: 1,
-                    height: 8,
-                    borderRadius: 4,
+                    mr: 1.5,
+                    height: 10,
+                    borderRadius: 5,
                     bgcolor: 'grey.200',
                     '& .MuiLinearProgress-bar': {
+                      borderRadius: 5,
                       bgcolor: match.tier === 'STRONG_MATCH' ? 'success.main' :
                                match.tier === 'PARTIAL_MATCH' ? 'warning.main' : 'error.main',
                     },
                   }}
                 />
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, minWidth: 36, textAlign: 'right' }}>
                   {Math.round(match.match_score * 100)}%
                 </Typography>
               </Box>
             </Box>
 
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
               <Chip
                 icon={<CheckCircleIcon />}
                 label={`${Math.round(match.required_match_ratio * 100)}% skills match`}
                 size="small"
                 variant="outlined"
+                sx={{ fontWeight: 500 }}
               />
               {match.adjacent_bonus > 0 && (
                 <Chip
@@ -195,17 +231,29 @@ const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
                   size="small"
                   variant="outlined"
                   color="info"
+                  sx={{ fontWeight: 500 }}
                 />
               )}
             </Box>
             <Button
-              variant="contained"
-              size="small"
+              variant="outlined"
+              size="medium"
               color="primary"
               fullWidth
-              sx={{ mt: 1.5 }}
+              startIcon={<PlayArrowRoundedIcon />}
+              sx={{
+                mt: 0.5,
+                borderColor: 'primary.main',
+                color: 'primary.main',
+                fontWeight: 600,
+                '&:hover': {
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                  borderColor: 'primary.main',
+                },
+              }}
               onClick={(e) => {
-                e.stopPropagation(); // prevent duplicate card onClick
+                e.stopPropagation();
                 useAppStore.getState().setSelectedJob(match.job_id, match.job_title);
               }}
             >

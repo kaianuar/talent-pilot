@@ -7,7 +7,6 @@ import {
   Avatar,
   Chip,
   Divider,
-
   Alert,
   Skeleton,
   List,
@@ -29,6 +28,31 @@ interface CandidateProfileProps {
   candidateId?: string;
 }
 
+/** Warm, muted palette for skill chips by proficiency */
+const SKILL_COLORS: Record<string, { bg: string; color: string }> = {
+  expert:  { bg: '#6B4D57', color: '#fff' },
+  advanced:{ bg: '#896A67', color: '#fff' },
+  intermediate: { bg: '#DDC8C4', color: '#13070C' },
+};
+
+const skillColor = (level?: string) =>
+  SKILL_COLORS[level ?? ''] ?? { bg: '#E8E0DC', color: '#13070C' };
+
+const cardSx = {
+  mb: 1.5,
+  borderRadius: 2,
+  boxShadow: '0 1px 4px rgba(19,7,12,0.06)',
+  border: '1px solid',
+  borderColor: 'divider',
+};
+
+const sectionHeaderSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 1,
+  mb: 1.5,
+};
+
 const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
   const { data: candidate, isLoading, isError } = useCandidate(candidateId || '', {
     enabled: !!candidateId,
@@ -36,7 +60,7 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
 
   if (!candidateId) {
     return (
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 1.5 }}>
         <Typography variant="h6" gutterBottom>
           Your Profile
         </Typography>
@@ -49,21 +73,21 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
 
   if (isLoading) {
     return (
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 1.5 }}>
         <Typography variant="h6" gutterBottom>
           Your Profile
         </Typography>
-        <Skeleton variant="circular" width={80} height={80} sx={{ mx: 'auto', mb: 2 }} />
+        <Skeleton variant="circular" width={72} height={72} sx={{ mx: 'auto', mb: 2 }} />
         <Skeleton variant="text" height={30} sx={{ mb: 1 }} />
         <Skeleton variant="text" height={20} sx={{ mb: 1 }} />
-        <Skeleton variant="rectangular" height={100} sx={{ mt: 2 }} />
+        <Skeleton variant="rectangular" height={100} sx={{ mt: 2, borderRadius: 2 }} />
       </Box>
     );
   }
 
   if (isError || !candidate) {
     return (
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 1.5 }}>
         <Typography variant="h6" gutterBottom>
           Your Profile
         </Typography>
@@ -75,27 +99,29 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
   }
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Typography variant="h6" gutterBottom>
+    <Box sx={{ p: 1.5 }}>
+      <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
         Your Profile
       </Typography>
 
       {/* Header Card */}
-      <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+      <Card sx={cardSx}>
+        <CardContent sx={{ pb: '16px !important' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
             <Avatar
               sx={{
-                width: 64,
-                height: 64,
-                bgcolor: 'primary.main',
+                width: 72,
+                height: 72,
+                background: 'linear-gradient(135deg, #6B4D57 0%, #896A67 100%)',
                 fontSize: '1.5rem',
+                fontWeight: 600,
+                boxShadow: '0 4px 12px rgba(107,77,87,0.3)',
               }}
             >
               {candidate.name.split(' ').map(n => n[0]).join('').toUpperCase()}
             </Avatar>
             <Box>
-              <Typography variant="h6" component="div">
+              <Typography variant="h6" component="div" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
                 {candidate.name}
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -104,27 +130,29 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
             </Box>
           </Box>
 
+          <Divider sx={{ mb: 1 }} />
+
           <List dense disablePadding>
             {candidate.email && (
-              <ListItem disablePadding sx={{ mb: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 32 }}>
-                  <EmailIcon fontSize="small" color="action" />
+              <ListItem disablePadding sx={{ mb: 0.25 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <EmailIcon fontSize="small" sx={{ color: 'secondary.main' }} />
                 </ListItemIcon>
                 <ListItemText primary={candidate.email} slotProps={{ primary: { variant: 'body2' } }} />
               </ListItem>
             )}
             {candidate.phone && (
-              <ListItem disablePadding sx={{ mb: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 32 }}>
-                  <PhoneIcon fontSize="small" color="action" />
+              <ListItem disablePadding sx={{ mb: 0.25 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <PhoneIcon fontSize="small" sx={{ color: 'secondary.main' }} />
                 </ListItemIcon>
                 <ListItemText primary={candidate.phone} slotProps={{ primary: { variant: 'body2' } }} />
               </ListItem>
             )}
             {candidate.location && (
-              <ListItem disablePadding sx={{ mb: 0.5 }}>
-                <ListItemIcon sx={{ minWidth: 32 }}>
-                  <LocationOnIcon fontSize="small" color="action" />
+              <ListItem disablePadding sx={{ mb: 0.25 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <LocationOnIcon fontSize="small" sx={{ color: 'secondary.main' }} />
                 </ListItemIcon>
                 <ListItemText primary={candidate.location} slotProps={{ primary: { variant: 'body2' } }} />
               </ListItem>
@@ -134,57 +162,59 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
       </Card>
 
       {/* Skills */}
-      <Card sx={{ mb: 2 }}>
+      <Card sx={cardSx}>
         <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <CodeIcon color="primary" />
-            <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+          <Box sx={sectionHeaderSx}>
+            <CodeIcon sx={{ color: 'primary.main' }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               Skills
             </Typography>
-            <Chip size="small" label={candidate.skills.length} color="primary" />
+            <Chip size="small" label={candidate.skills.length} color="primary" sx={{ ml: 0.5 }} />
           </Box>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            {candidate.skills.map((skill, index) => (
-              <Chip
-                key={index}
-                label={skill.name}
-                size="small"
-                variant="outlined"
-                color={skill.level === 'expert' ? 'primary' : 'default'}
-              />
-            ))}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+            {candidate.skills.map((skill, index) => {
+              const { bg, color } = skillColor(skill.level);
+              return (
+                <Chip
+                  key={index}
+                  label={skill.name}
+                  size="small"
+                  sx={{ bgcolor: bg, color, fontWeight: 500, borderRadius: '6px' }}
+                />
+              );
+            })}
           </Box>
         </CardContent>
       </Card>
 
       {/* Experience */}
       {candidate.experience.length > 0 && (
-        <Card sx={{ mb: 2 }}>
+        <Card sx={cardSx}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <WorkIcon color="primary" />
-              <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+            <Box sx={sectionHeaderSx}>
+              <WorkIcon sx={{ color: 'primary.main' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                 Experience
               </Typography>
             </Box>
             {candidate.experience.slice(0, 3).map((exp, index) => (
-              <Box key={index} sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              <Box key={index} sx={{ mb: 1.5, '&:last-of-type': { mb: 0 } }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {exp.title}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {exp.company} {exp.location && `• ${exp.location}`}
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                  {exp.company}{exp.location && ` · ${exp.location}`}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  {exp.start_date} - {exp.end_date || 'Present'}
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                  {exp.start_date} – {exp.end_date || 'Present'}
                 </Typography>
                 {index < Math.min(candidate.experience.length, 3) - 1 && (
-                  <Divider sx={{ mt: 2 }} />
+                  <Divider sx={{ mt: 1.5, borderColor: 'divider' }} />
                 )}
               </Box>
             ))}
             {candidate.experience.length > 3 && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                 +{candidate.experience.length - 3} more positions
               </Typography>
             )}
@@ -194,26 +224,29 @@ const CandidateProfile: React.FC<CandidateProfileProps> = ({ candidateId }) => {
 
       {/* Education */}
       {candidate.education.length > 0 && (
-        <Card>
+        <Card sx={{ ...cardSx, mb: 0 }}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <SchoolIcon color="primary" />
-              <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+            <Box sx={sectionHeaderSx}>
+              <SchoolIcon sx={{ color: 'primary.main' }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                 Education
               </Typography>
             </Box>
             {candidate.education.map((edu, index) => (
-              <Box key={index}>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  {edu.degree} {edu.field && `in ${edu.field}`}
+              <Box key={index} sx={{ mb: index < candidate.education.length - 1 ? 1.5 : 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {edu.degree}{edu.field && ` in ${edu.field}`}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', mt: 0.25 }}>
                   {edu.institution}
                 </Typography>
                 {edu.graduation_date && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
                     Graduated: {edu.graduation_date}
                   </Typography>
+                )}
+                {index < candidate.education.length - 1 && (
+                  <Divider sx={{ mt: 1.5, borderColor: 'divider' }} />
                 )}
               </Box>
             ))}
