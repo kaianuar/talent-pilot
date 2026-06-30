@@ -86,17 +86,21 @@ const AppContent: React.FC = () => {
   return (
     <Box sx={{ flexGrow: 1, height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* App Bar */}
-      <AppBar position="static" elevation={0}>
-        <Toolbar>
-          <SmartToyIcon sx={{ mr: 2 }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+      <AppBar position="static" elevation={0} sx={{ backdropFilter: 'blur(8px)' }}>
+        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
+          <SmartToyIcon sx={{ mr: 1.5, fontSize: 28 }} />
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700, letterSpacing: '-0.01em' }}>
             TalentPilot
           </Typography>
-          <Chip
-            label={candidateId ? 'Profile Active' : 'No Profile'}
-            size="small"
-            sx={{ mr: 1 }}
-          />
+          {candidateId && (
+            <Chip
+              label="Profile Active"
+              color="success"
+              size="small"
+              variant="outlined"
+              sx={{ borderColor: 'rgba(255,255,255,0.4)', color: '#fff' }}
+            />
+          )}
         </Toolbar>
       </AppBar>
 

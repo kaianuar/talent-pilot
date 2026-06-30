@@ -165,35 +165,36 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             sx={{
               display: 'flex',
               flexDirection: message.role === 'user' ? 'row-reverse' : 'row',
-              mb: 2,
-              gap: 1,
+              mb: 1.5,
+              gap: 1.5,
             }}
           >
             <Avatar
               sx={{
                 bgcolor: message.role === 'user' ? 'primary.main' : 'secondary.main',
-                width: 40,
-                height: 40,
+                width: 36,
+                height: 36,
+                boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
               }}
             >
-              {message.role === 'user' ? <PersonIcon /> : <SmartToyIcon />}
+              {message.role === 'user' ? <PersonIcon sx={{ fontSize: 20 }} /> : <SmartToyIcon sx={{ fontSize: 20 }} />}
             </Avatar>
             <Paper
-              elevation={1}
+              elevation={0}
               sx={{
-                p: 2,
+                p: 1.5,
                 maxWidth: '70%',
-                bgcolor: message.role === 'user' ? 'primary.light' : 'background.paper',
+                bgcolor: message.role === 'user' ? 'primary.main' : 'background.paper',
                 color: message.role === 'user' ? 'primary.contrastText' : 'text.primary',
-                borderRadius: 2,
+                borderRadius: message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                boxShadow: message.role === 'user'
+                  ? '0 2px 8px rgba(107,77,87,0.2)'
+                  : '0 1px 3px rgba(19,7,12,0.05)',
               }}
             >
               <Typography
-                variant="body1"
-                sx={{
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
+                variant="body2"
+                sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.55 }}
               >
                 {message.content}
               </Typography>
