@@ -8,7 +8,7 @@ This module creates a LangGraph workflow that:
 """
 
 from typing import Literal, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
@@ -70,7 +70,7 @@ def generate_question_node(state: ScreeningGraphState) -> ScreeningGraphState:
         **state,
         "current_node": "awaiting_answer",
         "generated_question_text": current_question.text if current_question else None,
-        "last_updated": datetime.utcnow(),
+        "last_updated": datetime.now(timezone.utc),
     }
 
 
@@ -88,7 +88,7 @@ def await_answer_node(state: ScreeningGraphState, user_input: str) -> ScreeningG
     answer = Answer(
         question_id=session.current_question.id if session.current_question else "",
         text=user_input,
-        timestamp=datetime.utcnow().timestamp(),
+        timestamp=datetime.now(timezone.utc).timestamp(),
     )
     
     # Record in domain entity
@@ -98,7 +98,7 @@ def await_answer_node(state: ScreeningGraphState, user_input: str) -> ScreeningG
         **state,
         "user_input": user_input,
         "current_node": "assessing",
-        "last_updated": datetime.utcnow(),
+        "last_updated": datetime.now(timezone.utc),
     }
 
 
@@ -153,7 +153,7 @@ def assess_answer_node(state: ScreeningGraphState) -> ScreeningGraphState:
         **state,
         "assessment": assessment,
         "current_node": "routing",  # Will be resolved by conditional edge
-        "last_updated": datetime.utcnow(),
+        "last_updated": datetime.now(timezone.utc),
     }
 
 

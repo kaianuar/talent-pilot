@@ -4,7 +4,7 @@ This use case orchestrates the domain logic for screening a candidate.
 It coordinates between the domain entities and the infrastructure ports.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from backend.domain.entities.screening_session import (
@@ -107,7 +107,7 @@ class ConductScreeningUseCase:
         answer = Answer(
             question_id=session.current_question.id if session.current_question else "",
             text=answer_text,
-            timestamp=datetime.utcnow().timestamp(),
+            timestamp=datetime.now(timezone.utc).timestamp(),
         )
         
         session.record_answer(answer)

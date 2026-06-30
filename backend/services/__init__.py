@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -55,7 +55,7 @@ def save_parsed_resume(candidate_id: str, parsed: dict) -> dict:
             existing.experiences = parsed.get("experiences", [])
             existing.education = parsed.get("education", [])
             existing.years_experience = parsed.get("years_experience", 0)
-            existing.parsed_at = datetime.utcnow()
+            existing.parsed_at = datetime.now(timezone.utc)
             return existing.to_dict()
         pr = ParsedResume(
             candidate_id=candidate_id,

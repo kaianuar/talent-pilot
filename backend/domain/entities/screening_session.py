@@ -5,7 +5,7 @@ It enforces invariants, tracks state, and coordinates question/answer flow.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 import uuid
@@ -56,8 +56,8 @@ class ScreeningSession:
     
     # State
     status: ScreeningStatus = ScreeningStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     
     # Question flow
@@ -106,7 +106,7 @@ class ScreeningSession:
         
         self.question_nodes = [QuestionNode(q) for q in questions]
         self.status = ScreeningStatus.IN_PROGRESS
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def ask_current_question(self) -> Question:
         """Record that current question has been asked."""
@@ -114,9 +114,9 @@ class ScreeningSession:
             raise ValueError(f"Cannot ask question in status: {self.status}")
         
         current = self.question_nodes[self.current_question_index]
-        current.asked_at = datetime.utcnow()
+        current.asked_at = datetime.now(timezone.utc)
         self.status = ScreeningStatus.AWAITING_ANSWER
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
         return current.question
     
     def record_answer(self, answer: Answer) -> None:
@@ -126,9 +126,9 @@ class ScreeningSession:
         
         current = self.question_nodes[self.current_question_index]
         current.answer = answer
-        current.answered_at = datetime.utcnow()
+        current.answered_at = datetime.now(timezone.utc)
         self.status = ScreeningStatus.ASSESSING
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def record_assessment(self, assessment: AnswerAssessment) -> None:
         """Record assessment of the current answer."""
@@ -142,13 +142,13 @@ class ScreeningSession:
         if assessment.decision == AssessmentDecision.REJECT_CANDIDATE:
             self.status = ScreeningStatus.REJECTED
             self.termination_reason = assessment.reasoning
-            self.completed_at = datetime.utcnow()
+            self.completed_at = datetime.now(timezone.utc)
         
         elif assessment.decision == AssessmentDecision.SKIP_TO_EMAIL:
             self.sufficient_evidence = True
             self.termination_reason = f"Early termination: {assessment.reasoning}"
             self.status = ScreeningStatus.EARLY_TERMINATION
-            self.completed_at = datetime.utcnow()
+            self.completed_at = datetime.now(timezone.utc)
         
         elif assessment.decision == AssessmentDecision.PROBE_FOR_CLARITY:
             # Stay on same question, will generate probe
@@ -158,11 +158,11 @@ class ScreeningSession:
             self.current_question_index += 1
             if self.current_question_index >= len(self.question_nodes):
                 self.status = ScreeningStatus.COMPLETE
-                self.completed_at = datetime.utcnow()
+                self.completed_at = datetime.now(timezone.utc)
             else:
                 self.status = ScreeningStatus.IN_PROGRESS
         
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def to_dict(self) -> dict:
         """Serialize screening session to dict."""

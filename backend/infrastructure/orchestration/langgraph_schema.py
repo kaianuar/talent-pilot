@@ -6,7 +6,7 @@ clean separation from the domain layer.
 
 from dataclasses import dataclass, field
 from typing import Annotated, Optional, Literal, TypedDict
-from datetime import datetime
+from datetime import datetime, timezone
 import operator
 
 from backend.domain.entities.screening_session import ScreeningSession
@@ -94,7 +94,7 @@ def create_initial_state(
     Returns:
         Initial graph state ready for LangGraph execution
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     return {
         "screening_session": screening_session,

@@ -1,7 +1,7 @@
 """Candidate and ParsedResume models."""
 
 from sqlalchemy import Column, String, Integer, Text, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel
 from backend.models.base import Base
@@ -15,7 +15,7 @@ class Candidate(Base):
     email = Column(String, nullable=False)
     phone = Column(String)
     resume_url = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {
@@ -40,7 +40,7 @@ class ParsedResume(Base):
     education_json = Column("education", Text, default="[]")
     years_experience = Column(Integer, default=0)
     raw_response = Column(Text)
-    parsed_at = Column(DateTime, default=datetime.utcnow)
+    parsed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     @property
     def skills(self) -> List[dict]:

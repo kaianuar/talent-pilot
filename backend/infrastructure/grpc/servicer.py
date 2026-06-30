@@ -6,7 +6,7 @@ integrating with the hexagonal domain layer for business logic.
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, AsyncIterator
 import asyncio
 
@@ -123,7 +123,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             total_questions=total,
             progress_percentage=progress,
             current_question_text=current_question_text,
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat() + "Z",
         )
     
     def StartScreening(

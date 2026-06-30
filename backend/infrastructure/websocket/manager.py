@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Dict, List, Set, Optional, Any, Callable
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -69,7 +69,7 @@ class ScreeningProgressMessage:
     
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat() + "Z"
+            self.timestamp = datetime.now(timezone.utc).isoformat() + "Z"
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary for JSON serialization."""

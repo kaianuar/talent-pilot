@@ -9,7 +9,7 @@ It coordinates the flow while keeping business rules pure in the domain layer.
 
 from typing import Optional, Callable, Any
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from backend.domain.entities.screening_session import (
@@ -206,7 +206,7 @@ class ScreeningOrchestrator:
         if current_question:
             self._publish_event(QuestionAskedEvent(
                 session_id=session.id,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 event_type="question_asked",
                 question_id=current_question.id,
                 question_text=current_question.text,
@@ -240,7 +240,7 @@ class ScreeningOrchestrator:
         answer = Answer(
             question_id=session.current_question.id if session.current_question else "",
             text=answer_text,
-            timestamp=datetime.utcnow().timestamp(),
+            timestamp=datetime.now(timezone.utc).timestamp(),
         )
         
         # Record in session aggregate
@@ -255,7 +255,7 @@ class ScreeningOrchestrator:
         # Publish event
         self._publish_event(AnswerReceivedEvent(
             session_id=session.id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             event_type="answer_received",
             question_id=answer.question_id,
             answer_text=answer.text,
@@ -312,7 +312,7 @@ class ScreeningOrchestrator:
         # Publish event
         self._publish_event(AnswerAssessedEvent(
             session_id=session.id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             event_type="answer_assessed",
             question_id=question.id,
             quality=assessment.quality.value,
@@ -325,7 +325,7 @@ class ScreeningOrchestrator:
         if session.is_complete:
             self._publish_event(ScreeningCompletedEvent(
                 session_id=session.id,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 event_type="screening_completed",
                 final_status=session.status.value,
                 questions_asked=session.questions_answered,

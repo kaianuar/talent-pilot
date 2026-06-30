@@ -7,6 +7,7 @@ requests, allowing the same gRPC service to serve both native and web clients.
 Reference: https://github.com/grpc/grpc-web
 """
 
+from datetime import datetime, timezone
 import asyncio
 import json
 import logging
@@ -187,7 +188,7 @@ class GRPCWebProxy:
             return {
                 "status": "healthy",
                 "grpc_target": self.grpc_target,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
     
     async def close(self) -> None:

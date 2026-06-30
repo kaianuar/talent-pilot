@@ -1,7 +1,7 @@
 """Audit log model."""
 
 from sqlalchemy import Column, String, Text, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.models.base import Base
 
 
@@ -9,7 +9,7 @@ class AuditLogEntry(Base):
     __tablename__ = "audit_log"
 
     id = Column(String, primary_key=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     action = Column(String, nullable=False)
     candidate_id = Column(String)
     details_json = Column("details", Text, default="{}")

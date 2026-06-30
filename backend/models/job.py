@@ -1,7 +1,7 @@
 """Job model."""
 
 from sqlalchemy import Column, String, Integer, Text, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.models.base import Base
 
 
@@ -16,7 +16,7 @@ class Job(Base):
     min_years = Column(Integer, nullable=False, default=0)
     description = Column(Text, default="")
     recruiter_email = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     @property
     def required_skills(self):

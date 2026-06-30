@@ -6,7 +6,7 @@ the hexagonal domain layer.
 
 from typing import Any, TypedDict, Annotated, Optional, Literal
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import operator
 
 from langgraph.graph import StateGraph, END
@@ -87,7 +87,7 @@ def create_question_node(
                         **state,
                         "generated_question_text": probe_question.text,
                         "current_node": "question_ready",
-                        "last_updated": datetime.utcnow(),
+                        "last_updated": datetime.now(timezone.utc),
                     }
         
         # Standard question flow
@@ -102,7 +102,7 @@ def create_question_node(
                 **state,
                 "generated_question_text": question.text,
                 "current_node": "awaiting_answer",
-                "last_updated": datetime.utcnow(),
+                "last_updated": datetime.now(timezone.utc),
             }
         
         # No more questions - should not reach here normally
@@ -111,7 +111,7 @@ def create_question_node(
             **state,
             "current_node": "error",
             "error": {"message": "No question available"},
-            "last_updated": datetime.utcnow(),
+            "last_updated": datetime.now(timezone.utc),
         }
     
     return _node
@@ -131,7 +131,7 @@ def receive_answer_node(state: ScreeningGraphState, user_input: str) -> Screenin
     answer = Answer(
         question_id=session.current_question.id if session.current_question else "",
         text=user_input,
-        timestamp=datetime.utcnow().timestamp(),
+        timestamp=datetime.now(timezone.utc).timestamp(),
     )
     
     # Record in domain entity
@@ -143,7 +143,7 @@ def receive_answer_node(state: ScreeningGraphState, user_input: str) -> Screenin
         **state,
         "user_input": user_input,
         "current_node": "assessing",
-        "last_updated": datetime.utcnow(),
+        "last_updated": datetime.now(timezone.utc),
     }
 
 
@@ -171,7 +171,7 @@ def create_assess_answer_node(
                 **state,
                 "current_node": "error",
                 "error": {"message": "Invalid question index"},
-                "last_updated": datetime.utcnow(),
+                "last_updated": datetime.now(timezone.utc),
             }
         
         node = session.question_nodes[current_idx]
@@ -184,7 +184,7 @@ def create_assess_answer_node(
                 **state,
                 "current_node": "error",
                 "error": {"message": "No answer to assess"},
-                "last_updated": datetime.utcnow(),
+                "last_updated": datetime.now(timezone.utc),
             }
         
         # Assess using domain service
@@ -209,7 +209,7 @@ def create_assess_answer_node(
                 **state,
                 "assessment": assessment,
                 "current_node": "routing",
-                "last_updated": datetime.utcnow(),
+                "last_updated": datetime.now(timezone.utc),
             }
             
         except Exception as e:
@@ -218,7 +218,7 @@ def create_assess_answer_node(
                 **state,
                 "current_node": "error",
                 "error": {"message": f"Assessment failed: {e}"},
-                "last_updated": datetime.utcnow(),
+                "last_updated": datetime.now(timezone.utc),
             }
     
     return _node

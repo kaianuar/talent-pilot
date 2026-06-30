@@ -1,7 +1,7 @@
 """Application model."""
 
 from sqlalchemy import Column, String, Float, Text, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.models.base import Base
 
 
@@ -17,7 +17,7 @@ class Application(Base):
     status = Column(String, nullable=False, default="pending")
     email_message_id = Column(String)
     email_error = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     @property
     def screening_answers(self):

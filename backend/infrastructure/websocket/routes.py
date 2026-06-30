@@ -4,6 +4,7 @@ This module provides WebSocket endpoints for the FastAPI application,
 enabling real-time bidirectional communication with connected clients.
 """
 
+from datetime import datetime, timezone
 import asyncio
 import json
 import logging
@@ -136,7 +137,7 @@ async def screening_websocket(
                         # Respond to heartbeat
                         await websocket.send_text(json.dumps({
                             "message_type": "heartbeat",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
                         }))
                     
                     elif message_type == "ack":
@@ -154,7 +155,7 @@ async def screening_websocket(
                 try:
                     await websocket.send_text(json.dumps({
                         "message_type": "heartbeat",
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
                     }))
                 except Exception:
                     # Connection likely closed
@@ -194,7 +195,7 @@ async def test_websocket(websocket: WebSocket):
             await websocket.send_text(json.dumps({
                 "message_type": "echo",
                 "received": data,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             }))
             
     except WebSocketDisconnect:
