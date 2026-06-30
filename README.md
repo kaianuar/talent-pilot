@@ -7,39 +7,46 @@ TalentPilot is an AI-powered recruiting assistant that automates the end-to-end 
 ## 🏗️ Architecture
 
 ```text
-┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐
-│   Browser   │────▶│   Nginx     │────▶│  React (Vite)       │
-│  (Candidate) │     │   (9000)    │     │  Chat UI + Preview  │
-└─────────────┘     └──────┬──────┘     └─────────────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │  FastAPI    │
-                    │  (8000)     │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-     ┌────────────┐ ┌──────────┐ ┌──────────┐
-     │  Resume    │ │ Matching │ │  Email   │
-     │  Parser    │ │  Engine  │ │  Service │
-     │(Qwen3-VL) │ │(Qwen3-Max)│ │(DirectMail)│
-     └────────────┘ └──────────┘ └──────────┘
-              │            │            │
-              └────────────┼────────────┘
-                    ┌──────▼──────┐
-                    │  SQLite DB  │
-                    └─────────────┘
+┌─────────────┐     ┌─────────────┐     ┌──────────────────────┐
+│   Browser   │────▶│   Nginx     │────▶│  React (Vite)        │
+│  (Candidate) │     │   (9000)    │     │  Chat UI + Screening │
+└──────┬──────┘     └──────┬──────┘     └──────────────────────┘
+       │                   │
+       │ gRPC-Web          │ REST /api/*
+       │ + WebSocket       │
+       │                   │
+       │            ┌──────▼──────┐
+       │            │  FastAPI    │
+       │            │  (8000)     │
+       │            └──────┬──────┘
+       │                   │
+       │     ┌─────────────┼─────────────┐
+       │     ▼             ▼             ▼
+       │  ┌────────┐ ┌──────────┐ ┌──────────┐
+       │  │ Resume │ │ Matching │ │  Email   │
+       │  │ Parser │ │  Engine  │ │  Service │
+       │  │(Qwen-VL)│ │(Qwen-Max)│ │(DirectMail)│
+       │  └────────┘ └──────────┘ └──────────┘
+       │                   │
+       ▼                   │
+┌──────────────┐           │
+│ gRPC Server  │           │
+│  (50051)     │           │
+│ Screening    │◀──────────┘
+│ Service      │
+│ (LangGraph)  │
+└──────────────┘
 ```
 
 ## ✨ Features
 
 - **CV Parsing**: Upload a PDF resume → structured data extraction via Qwen3-VL-Plus vision model
 - **Smart Matching**: Composite scoring with required skills (35%), adjacent skills (20%), experience (20%), and LLM reasoning (25%)
+- **gRPC Screening Interview**: Multi-turn AI interview via gRPC + LangGraph — asks targeted questions, assesses answers in real-time, drafts recruiter email on completion
+
 - **Screening Questions**: AI-generated questions targeting skill gaps specific to each candidate-job pair
+- **Real-time WebSocket Progress**: Live progress updates during the screening interview
 - **Email Drafting**: Professional recruiter email drafted by qwen3-max, previewed before sending
-- **Human-in-the-Loop**: Email only sends when the candidate explicitly clicks "Send" — enforced at both prompt and API level
-- **Audit Log**: Every action logged for transparency and debugging
-- **32 Realistic Jobs**: Seeded dataset spanning backend, frontend, data, devops, mobile, ML, design, QA
 
 ## 🚀 Quick Start
 
@@ -49,8 +56,15 @@ git clone <repo-url>
 cd qwen-hackathon
 pip install -r backend/requirements.txt
 
-# 2. Build React frontend
+# 2. Build React frontend (includes proto compilation)
 cd frontend-react && npm install && npm run build && cd ..
+
+# 2b. (Optional) Compile gRPC proto for screening
+pip install grpcio-tools
+python -m grpc_tools.protoc -I backend/infrastructure/grpc \
+  --python_out=backend/infrastructure/grpc/proto \
+  --grpc_python_out=backend/infrastructure/grpc/proto \
+  backend/infrastructure/grpc/screening.proto
 
 # 3. Set your API key
 export QWEN_API_KEY="your-qwen-cloud-api-key"
@@ -60,10 +74,6 @@ uvicorn backend.app:app --reload --port 9000
 
 # 5. Open http://localhost:9000
 ```
-
-For frontend development with hot-reload, run `cd frontend-react && npm run dev` in a separate terminal.
-
-## 📁 Project Structure
 
 ```
 qwen-hackathon/
@@ -167,9 +177,9 @@ pytest tests/test_agent_flow.py -v         # Phase 4 (mocked LLM)
 | Matching Reasoning | qwen3-max | Chat + Reasoning |
 | Screening Questions | qwen3-max | Chat + Reasoning |
 | Email Drafting | qwen3-max | Chat + Reasoning |
-| Backend | FastAPI + SQLAlchemy | — |
+| Backend | FastAPI + SQLAlchemy + LangGraph | — |
 | Frontend | React + TypeScript + Vite + Material UI | — |
-| Email | Alibaba DirectMail | — |
+| gRPC / WebSocket | gRPC-Web proxy + WebSocket progress | — |
 | Deployment | Alibaba Cloud FC | — |
 
 ## 📋 Submission Checklist
