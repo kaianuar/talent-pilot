@@ -82,7 +82,7 @@ class GRPCWebProxy:
 
                 # Encode response as gRPC-Web frame
                 resp_bytes = resp.SerializeToString()
-
+                frame = bytes([0]) + len(resp_bytes).to_bytes(4, "big") + resp_bytes
                 return Response(
                     content=frame,
                     status_code=200,
