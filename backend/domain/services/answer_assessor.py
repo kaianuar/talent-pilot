@@ -4,6 +4,7 @@ This is a domain service because it encapsulates complex business logic
 that doesn't naturally fit into a single entity or value object.
 """
 
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
