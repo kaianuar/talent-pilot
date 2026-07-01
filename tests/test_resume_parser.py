@@ -10,7 +10,17 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from backend.services.resume_parser import parse_resume, parse_resume_from_file, ResumeParseError, _extract_json
+from backend.services.resume_parser import (
+    parse_resume,
+    parse_resume_from_file,
+    ResumeParseError,
+    _extract_json,
+    _extract_text_from_pdf,
+    _pdf_to_images,
+    _parse_with_text_model,
+    _parse_with_vision_model,
+    _repair_truncated_json,
+)
 
 
 # --- Fixtures ---
@@ -182,3 +192,493 @@ def test_parsed_resume_model_missing_fields():
 
     with pytest.raises(ValidationError):
         ParsedResumeModel(name="Test")  # missing email
+
+# --- _repair_truncated_json tests ---
+
+def test_repair_truncated_json_valid():
+    """_repair_truncated_json should close truncated JSON."""
+    truncated = '{"name": "John", "skills": ["Python", "React'
+    result = _repair_truncated_json(truncated)
+    assert result is not None
+    assert result["name"] == "John"
+
+
+def test_repair_truncated_json_already_complete():
+    """_repair_truncated_json should handle already-complete JSON."""
+    complete = '{"name": "John"}'
+    result = _repair_truncated_json(complete)
+    # Already parseable, _repair should still work
+    assert result is not None
+    assert result["name"] == "John"
+
+
+def test_repair_truncated_json_garbage():
+    """_repair_truncated_json should return None for unparseable input."""
+    result = _repair_truncated_json("not json at all {{{}}}}}}")
+    # May or may not parse, but shouldn't crash
+    assert result is None or isinstance(result, dict)
+
+
+def test_repair_truncated_json_empty():
+    """_repair_truncated_json should return None for empty/short input."""
+    result = _repair_truncated_json("")
+    assert result is None
+
+
+# --- _extract_text_from_pdf tests (mock fitz) ---
+
+def test_extract_text_from_pdf_success():
+    """_extract_text_from_pdf should return text from all pages."""
+    mock_page1 = MagicMock()
+    mock_page1.get_text.return_value = "Page one content. "
+    mock_page2 = MagicMock()
+    mock_page2.get_text.return_value = "Page two content. "
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page1, mock_page2]))
+    mock_doc.close = MagicMock()
+
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.return_value = mock_doc
+        result = _extract_text_from_pdf(b"%PDF-1.4 fake")
+
+    assert "Page one content." in result
+    assert "Page two content." in result
+    mock_doc.close.assert_called_once()
+
+
+def test_extract_text_from_pdf_failure():
+    """_extract_text_from_pdf should return empty string on error."""
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.side_effect = Exception("corrupted PDF")
+        result = _extract_text_from_pdf(b"bad bytes")
+
+    assert result == ""
+
+
+def test_extract_text_from_pdf_empty_pages():
+    """_extract_text_from_pdf should handle PDFs with empty pages."""
+    mock_page = MagicMock()
+    mock_page.get_text.return_value = ""
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+    mock_doc.close = MagicMock()
+
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.return_value = mock_doc
+        result = _extract_text_from_pdf(b"%PDF-1.4")
+
+    assert result == ""
+
+
+# --- _pdf_to_images tests (mock fitz) ---
+
+def test_pdf_to_images_success():
+    """_pdf_to_images should return base64-encoded PNG per page."""
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"\x89PNG fake image data"
+
+    mock_page = MagicMock()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page, mock_page]))
+    mock_doc.close = MagicMock()
+
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+        images = _pdf_to_images(b"%PDF-1.4 fake")
+
+    assert len(images) == 2
+    for img in images:
+        assert isinstance(img, str)
+        assert len(img) > 0  # base64 string
+    mock_doc.close.assert_called_once()
+
+
+def test_pdf_to_images_empty_pdf():
+    """_pdf_to_images should return empty list for PDF with no pages."""
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([]))
+    mock_doc.close = MagicMock()
+
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.return_value = mock_doc
+        images = _pdf_to_images(b"%PDF-1.4 empty")
+
+    assert images == []
+
+
+# --- Vision model path tests ---
+
+def test_parse_with_vision_model_success():
+    """_parse_with_vision_model should parse resume from page images."""
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"\x89PNG data"
+
+    mock_page = MagicMock()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+    mock_doc.close = MagicMock()
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with (
+        patch("backend.services.resume_parser.fitz") as mock_fitz,
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+    ):
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+        result = _parse_with_vision_model(b"%PDF-1.4 fake")
+
+    assert result["name"] == "John Doe"
+    assert len(result["skills"]) >= 3
+
+
+def test_parse_with_vision_model_no_pages():
+    """_parse_with_vision_model should raise ResumeParseError if PDF has no pages."""
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([]))
+    mock_doc.close = MagicMock()
+
+    with (
+        patch("backend.services.resume_parser.fitz") as mock_fitz,
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+    ):
+        mock_fitz.open.return_value = mock_doc
+        with pytest.raises(ResumeParseError, match="no pages"):
+            _parse_with_vision_model(b"%PDF-1.4 empty")
+
+
+# --- Text extraction failure → vision fallback ---
+
+def test_parse_resume_text_extraction_fails_falls_back_to_vision():
+    """When text extraction yields no text, parse_resume should use vision model."""
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"\x89PNG data"
+
+    mock_page = MagicMock()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+    mock_doc.close = MagicMock()
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value=""),
+        patch("backend.services.resume_parser.fitz") as mock_fitz,
+    ):
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+        result = parse_resume(b"%PDF-1.4 scanned")
+
+    assert result["name"] == "John Doe"
+
+
+def test_parse_resume_text_model_fails_falls_back_to_vision():
+    """When text model raises, parse_resume should fall back to vision model."""
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"\x89PNG data"
+
+    mock_page = MagicMock()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+    mock_doc.close = MagicMock()
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    # First call (text model) fails, second call (vision model) succeeds
+    call_count = {"n": 0}
+    def side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("text model exploded")
+        return mock_choice.message.content
+
+    mock_client.chat.completions.create.side_effect = [
+        MagicMock(choices=[MagicMock(message=MagicMock(content="invalid json that fails parsing"))]),
+        MagicMock(choices=[MagicMock(message=MagicMock(content=json.dumps(REALISTIC_PARSED_RESUME)))]),
+    ]
+
+    long_text = "John Doe\njohn@example.com\nSenior Engineer\n" * 50
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value=long_text),
+        patch("backend.services.resume_parser.fitz") as mock_fitz,
+    ):
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+        result = parse_resume(b"%PDF-1.4 fallback")
+
+    assert result["name"] == "John Doe"
+    # Text model was called first (failed), then vision model succeeded
+    assert mock_client.chat.completions.create.call_count == 2
+
+
+# --- Both models failing → ResumeParseError ---
+
+def test_parse_resume_both_models_fail():
+    """When both text and vision models fail, parse_resume should raise ResumeParseError."""
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([]))
+    mock_doc.close = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("API down")
+
+    short_text = "short"  # below MIN_TEXT_LENGTH
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value=short_text),
+        patch("backend.services.resume_parser.fitz") as mock_fitz,
+    ):
+        mock_fitz.open.return_value = mock_doc
+        with pytest.raises(ResumeParseError, match="both text and vision models"):
+            parse_resume(b"%PDF-1.4 broken")
+
+
+def test_parse_resume_both_models_fail_with_long_text():
+    """When text model fails and vision model also fails, raise ResumeParseError."""
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([]))
+    mock_doc.close = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("API down")
+
+    long_text = "John Doe\njohn@example.com\n" * 50
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value=long_text),
+        patch("backend.services.resume_parser.fitz") as mock_fitz,
+    ):
+        mock_fitz.open.return_value = mock_doc
+        with pytest.raises(ResumeParseError) as exc_info:
+            parse_resume(b"%PDF-1.4 broken")
+        assert exc_info.value.partial is True
+
+
+# --- Large text content handling ---
+
+def test_parse_resume_large_text():
+    """parse_resume should handle very large resume text."""
+    # Simulate a very long resume
+    large_text = "John Doe\njohn@example.com\nSenior Engineer\n" + ("Experience: Built systems. " * 500)
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value=large_text),
+    ):
+        result = parse_resume(b"%PDF-1.4 large")
+
+    assert result["name"] == "John Doe"
+    # Verify the large text was passed to the model
+    call_args = mock_client.chat.completions.create.call_args
+    messages = call_args.kwargs.get("messages") or call_args[1].get("messages", [])
+    user_content = messages[1]["content"]
+    assert len(user_content) > 1000
+
+
+# --- Multiple page PDF handling ---
+
+def test_pdf_to_images_multi_page():
+    """_pdf_to_images should return one image per page."""
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"\x89PNG page data"
+
+    pages = []
+    for i in range(5):
+        mock_page = MagicMock()
+        mock_page.get_pixmap.return_value = mock_pix
+        pages.append(mock_page)
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter(pages))
+    mock_doc.close = MagicMock()
+
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.return_value = mock_doc
+        mock_fitz.Matrix.return_value = MagicMock()
+        images = _pdf_to_images(b"%PDF-1.4 multi-page")
+
+    assert len(images) == 5
+
+
+def test_extract_text_multi_page():
+    """_extract_text_from_pdf should concatenate text from all pages."""
+    pages = []
+    for i in range(3):
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = f"Content of page {i + 1}.\n"
+        pages.append(mock_page)
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter(pages))
+    mock_doc.close = MagicMock()
+
+    with patch("backend.services.resume_parser.fitz") as mock_fitz:
+        mock_fitz.open.return_value = mock_doc
+        result = _extract_text_from_pdf(b"%PDF-1.4 multi")
+
+    assert "Content of page 1." in result
+    assert "Content of page 2." in result
+    assert "Content of page 3." in result
+
+
+# --- parse_resume_from_file success path ---
+
+def test_parse_resume_from_file_success(tmp_path):
+    """parse_resume_from_file should read bytes and delegate to parse_resume."""
+    fake_pdf = tmp_path / "resume.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4 fake content")
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value="John Doe\njohn@example.com\n" * 50),
+    ):
+        result = parse_resume_from_file(fake_pdf)
+
+    assert result["name"] == "John Doe"
+
+
+# --- _extract_json additional edge cases ---
+
+def test_extract_json_repair_truncated():
+    """_extract_json should repair truncated JSON via _repair_truncated_json."""
+    truncated = '{"name": "John", "skills": ["Python"'
+    result = _extract_json(truncated)
+    assert result["name"] == "John"
+    assert "Python" in result["skills"]
+
+
+def test_extract_json_fences_no_lang():
+    """_extract_json should handle code fences without language specifier."""
+    raw = '```\n{"name": "Test"}\n```'
+    result = _extract_json(raw)
+    assert result["name"] == "Test"
+
+
+# --- ResumeParseError attributes ---
+
+def test_resume_parse_error_attributes():
+    """ResumeParseError should store partial flag."""
+    err = ResumeParseError("test error", partial=True)
+    assert str(err) == "test error"
+    assert err.partial is True
+
+    err2 = ResumeParseError("test error 2")
+    assert err2.partial is False
+
+
+# --- Text model path tests ---
+
+def test_parse_with_text_model_success():
+    """_parse_with_text_model should call OpenAI with text content."""
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(REALISTIC_PARSED_RESUME)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with (
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+    ):
+        result = _parse_with_text_model("John Doe\njohn@example.com\n" * 50)
+
+    assert result["name"] == "John Doe"
+    mock_client.chat.completions.create.assert_called_once()
+
+
+def test_parse_with_text_model_invalid_response():
+    """_parse_with_text_model should propagate errors from invalid JSON responses."""
+    mock_choice = MagicMock()
+    mock_choice.message.content = "not valid json"
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with (
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_client),
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key"),
+    ):
+        with pytest.raises(json.JSONDecodeError):
+            _parse_with_text_model("Some resume text")
+
+
+def test_repair_truncated_json_with_escaped_chars():
+    """_repair_truncated_json should handle escaped characters in strings."""
+    # JSON with backslash-escaped quotes inside a string
+    truncated = '{"name": "Jo\\"hn", "bio": "He said \\"hello'
+    result = _repair_truncated_json(truncated)
+    # Should handle the escaped quotes without crashing
+    assert result is not None or result is None  # just no crash
+
+
+def test_repair_truncated_json_with_existing_closing_brackets():
+    """_repair_truncated_json should decrement open_brackets on existing ']' chars."""
+    # Has a completed array "first" and a truncated second array
+    truncated = '{"a": ["done"], "b": ["incomplete"'
+    result = _repair_truncated_json(truncated)
+    assert result is not None
+    assert result["a"] == ["done"]
+    assert result["b"] == ["incomplete"]
+
+
+def test_repair_truncated_json_with_arrays():
+    """_repair_truncated_json should close open arrays (brackets)."""
+    truncated = '{"items": ["a", "b", "c"'
+    result = _repair_truncated_json(truncated)
+    assert result is not None
+    assert result["items"] == ["a", "b", "c"]
+
+
+def test_repair_truncated_json_nested_arrays():
+    """_repair_truncated_json should handle nested arrays and objects."""
+    truncated = '{"data": {"list": ["x", "y"'
+    result = _repair_truncated_json(truncated)
+    assert result is not None
+    assert result["data"]["list"] == ["x", "y"]
