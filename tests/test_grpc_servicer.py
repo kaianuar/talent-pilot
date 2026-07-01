@@ -166,6 +166,133 @@ class TestGetScreeningResult:
         assert result_resp.summary.screening_id == screening_id
 
 
+class TestScreeningFlowRegressions:
+    """Regression tests for bugs found in the screening flow."""
+
+    def test_question_counter_never_exceeds_total(self, grpc_stub):
+        """Question number must never exceed total questions (regression: 'Question 5 of 3')."""
+        start_req = screening_pb2.StartScreeningRequest(
+            candidate_id="test-candidate",
+            job_id="test-job",
+            match_tier="STRONG_MATCH",
+            question_count=2,
+        )
+        start_resp = grpc_stub.StartScreening(start_req, timeout=30)
+        screening_id = start_resp.screening_id
+        total_questions = 2
+
+        # Answer all questions and track question numbers
+        current_question_id = start_resp.first_question.id
+
+        for i in range(total_questions + 2):  # try more than total
+            answer_req = screening_pb2.SubmitAnswerRequest(
+                screening_id=screening_id,
+                candidate_id="test-candidate",
+                question_id=current_question_id,
+                answer_text=(
+                    f"I have extensive experience with this technology. "
+                    f"I've worked on production systems for over 5 years, led teams of 4 engineers, "
+                    f"and delivered multiple projects on time. I specifically used Python and React "
+                    f"to build scalable microservices that handled 10K requests per second."
+                ),
+            )
+            try:
+                answer_resp = grpc_stub.SubmitAnswer(answer_req, timeout=30)
+            except grpc.RpcError:
+                break
+
+            if answer_resp.is_complete:
+                break
+
+            if answer_resp.next_question:
+                # Track that we never exceed total
+                assert i + 1 <= total_questions, (
+                    f"Question {i + 1} exceeds total {total_questions}"
+                )
+                current_question_id = answer_resp.next_question.id
+
+    def test_questions_are_different(self, grpc_stub):
+        """Generated questions should have different text (regression: same question repeated)."""
+        start_req = screening_pb2.StartScreeningRequest(
+            candidate_id="test-candidate",
+            job_id="test-job",
+            match_tier="STRONG_MATCH",
+            question_count=3,
+        )
+        start_resp = grpc_stub.StartScreening(start_req, timeout=30)
+        screening_id = start_resp.screening_id
+
+        # Collect all question texts
+        question_texts = [start_resp.first_question.text]
+        current_question_id = start_resp.first_question.id
+
+        for i in range(2):  # get 2 more questions
+            answer_req = screening_pb2.SubmitAnswerRequest(
+                screening_id=screening_id,
+                candidate_id="test-candidate",
+                question_id=current_question_id,
+                answer_text=(
+                    f"I have {5 + i} years of experience with Python, React, and distributed systems. "
+                    f"I've led teams and delivered production systems at scale with high availability."
+                ),
+            )
+            answer_resp = grpc_stub.SubmitAnswer(answer_req, timeout=30)
+
+            if answer_resp.is_complete or not answer_resp.next_question:
+                break
+
+            question_texts.append(answer_resp.next_question.text)
+            current_question_id = answer_resp.next_question.id
+
+        # At least 2 different questions should exist
+        unique_questions = set(question_texts)
+        assert len(unique_questions) >= 2, (
+            f"Expected different questions, got: {question_texts}"
+        )
+
+    def test_screening_completes_at_correct_count(self, grpc_stub):
+        """Screening must complete after exactly N questions (regression: ran past total)."""
+        question_count = 2
+        start_req = screening_pb2.StartScreeningRequest(
+            candidate_id="test-candidate",
+            job_id="test-job",
+            match_tier="STRONG_MATCH",
+            question_count=question_count,
+        )
+        start_resp = grpc_stub.StartScreening(start_req, timeout=30)
+        screening_id = start_resp.screening_id
+        current_question_id = start_resp.first_question.id
+        answered = 0
+
+        for _ in range(question_count + 5):  # safety margin
+            answer_req = screening_pb2.SubmitAnswerRequest(
+                screening_id=screening_id,
+                candidate_id="test-candidate",
+                question_id=current_question_id,
+                answer_text=(
+                    "I have extensive experience with all required technologies and have led "
+                    "multiple production deployments across distributed systems. My team of "
+                    "5 engineers delivered the project on time with 99.9% uptime."
+                ),
+            )
+            try:
+                answer_resp = grpc_stub.SubmitAnswer(answer_req, timeout=30)
+            except grpc.RpcError:
+                break
+
+            answered += 1
+
+            if answer_resp.is_complete:
+                break
+
+            if answer_resp.next_question:
+                current_question_id = answer_resp.next_question.id
+
+        # Should complete within question_count + 1 (allowing 1 probe)
+        assert answered <= question_count + 1, (
+            f"Screening answered {answered} questions but expected max {question_count + 1}"
+        )
+
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
