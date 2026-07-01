@@ -39,19 +39,11 @@ class LLMQuestionGenerator(QuestionGenerator):
     ) -> list[Question]:
         """Generate initial screening questions via LLM."""
         
-        # Map match tier to question count
-        tier_to_count = {
-            "STRONG_MATCH": 2,
-            "PARTIAL_MATCH": 3,
-            "WEAK_MATCH": 4,
-        }
-        actual_count = tier_to_count.get(match_tier, 3)
-        
         prompt = self._build_question_generation_prompt(
             candidate_id=candidate_id,
             job_id=job_id,
             match_tier=match_tier,
-            count=actual_count,
+            count=count,
         )
         
         response = self.client.chat.completions.create(

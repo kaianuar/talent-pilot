@@ -301,15 +301,28 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             question_id = current_node.question.id if current_node.question else ""
             proto_assessment = self._to_proto_answer_assessment(assessment, question_id) if assessment else None
             
-            # Check if complete
-            is_complete = session.status == ScreeningStatus.COMPLETE
+            # Check if complete (all terminal states)
+            is_complete = session.is_complete
             
             # Get next question if not complete
             next_question = None
             if not is_complete and session.current_question:
-                # Ask the next question to transition state
-                session.ask_current_question()
-                next_question = self._to_proto_question(session.current_question)
+                # Check if we need to probe (same question, different wording)
+                if assessment.decision == AssessmentDecision.PROBE_FOR_CLARITY:
+                    # Generate a follow-up probe question
+                    probe = self._question_generator.generate_follow_up_probe(
+                        original_question=session.current_question,
+                        vague_answer=answer.text,
+                        context={"tier": session.match_tier},
+                    )
+                    # Replace current question node with the probe
+                    session.question_nodes[session.current_question_index].question = probe
+                    session.ask_current_question()
+                    next_question = self._to_proto_question(probe)
+                else:
+                    # Move to next question
+                    session.ask_current_question()
+                    next_question = self._to_proto_question(session.current_question)
             
             # Get email draft if complete
             email_draft = None

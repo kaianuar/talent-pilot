@@ -135,3 +135,5 @@ data/uploads/
 
 # Husky / Node (root)
 node_modules/
+
+uploads/
