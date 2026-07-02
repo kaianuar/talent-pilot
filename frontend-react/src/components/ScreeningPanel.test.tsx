@@ -216,6 +216,7 @@ describe('ScreeningPanel', () => {
   });
 
   it('submits answer and shows next question', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<ScreeningPanel {...defaultProps} />);
 
     await waitFor(() => {
@@ -233,11 +234,13 @@ describe('ScreeningPanel', () => {
       );
     });
 
+    // Wait for assessment + next question (1.5s delay)
     await waitFor(() => {
       expect(
         screen.getByText('How do you handle state management?')
       ).toBeInTheDocument();
-    });
+    }, { timeout: 3000 });
+    vi.useRealTimers();
   });
 
   it('displays assessment feedback after submitting answer', async () => {

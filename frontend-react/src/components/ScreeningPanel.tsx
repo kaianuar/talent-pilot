@@ -124,6 +124,16 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
         setState({ phase: 'complete', screeningId, result: finalResult });
         onComplete?.(finalResult);
       } else if (result.nextQuestion) {
+        // Show assessment feedback briefly before next question
+        if (result.assessment) {
+          setState({
+            phase: 'assessing',
+            screeningId,
+            message: result.assessment.reasoning || 'Assessing your answer...',
+          });
+          // Brief pause to show feedback, then advance
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
         // Don't increment for probes (same question, different wording)
         const isProbe = result.assessment?.decision === 'PROBE_FOR_CLARITY';
         const nextNum = isProbe ? qNum : qNum + 1;
