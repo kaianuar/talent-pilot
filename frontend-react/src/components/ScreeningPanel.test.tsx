@@ -47,9 +47,12 @@ const failStartResponse: StartScreeningResponse = {
 
 const submitAnswerNextResponse: SubmitAnswerResponse = {
   assessment: {
+    questionId: 'q1',
     quality: 'good',
     confidence: 0.8,
-    decision: 'PASS',
+    keyPointsIdentified: ['state management'],
+    gapsIdentified: [],
+    decision: 'PROCEED_TO_NEXT_QUESTION',
     reasoning: 'Solid answer with relevant examples',
   },
   nextQuestion: {
@@ -66,9 +69,12 @@ const submitAnswerNextResponse: SubmitAnswerResponse = {
 
 const submitAnswerCompleteResponse: SubmitAnswerResponse = {
   assessment: {
+    questionId: 'q1',
     quality: 'excellent',
     confidence: 0.95,
-    decision: 'STRONG_HIRE',
+    keyPointsIdentified: ['leadership', 'technical depth'],
+    gapsIdentified: [],
+    decision: 'SKIP_TO_EMAIL',
     reasoning: 'Outstanding candidate',
   },
   nextQuestion: undefined,

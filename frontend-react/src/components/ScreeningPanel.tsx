@@ -124,7 +124,9 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
         setState({ phase: 'complete', screeningId, result: finalResult });
         onComplete?.(finalResult);
       } else if (result.nextQuestion) {
-        const nextNum = qNum + 1;
+        // Don't increment for probes (same question, different wording)
+        const isProbe = result.assessment?.decision === 'PROBE_FOR_CLARITY';
+        const nextNum = isProbe ? qNum : qNum + 1;
         setQuestionNumber(nextNum);
         setState({
           phase: 'question',
