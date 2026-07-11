@@ -134,9 +134,10 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
           // Brief pause to show feedback, then advance
           await new Promise(resolve => setTimeout(resolve, 1500));
         }
-        // Don't increment for probes (same question, different wording)
-        const isProbe = result.assessment?.decision === 'PROBE_FOR_CLARITY';
-        const nextNum = isProbe ? qNum : qNum + 1;
+        // Probes are additional questions — increment both counter and total
+        const isProbe = result.assessment?.decision === 'probe_for_clarity';
+        const nextNum = qNum + 1;
+        const nextTotal = isProbe ? totalQuestions + 1 : totalQuestions;
         setQuestionNumber(nextNum);
         setState({
           phase: 'question',
@@ -144,7 +145,7 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
           questionId: result.nextQuestion.id,
           text: result.nextQuestion.text,
           questionNumber: nextNum,
-          totalQuestions,
+          totalQuestions: nextTotal,
         });
       } else {
         setState({

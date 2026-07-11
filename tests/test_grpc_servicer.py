@@ -312,3 +312,188 @@ class TestEdgeCases:
         except grpc.RpcError as e:
             # Expected - NOT_FOUND or similar
             assert e.code() in [grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INTERNAL]
+
+
+
+class TestProbeBehavior:
+    """Unit tests for PROBE_FOR_CLARITY behavior with mocked LLM adapters.
+
+    These tests verify the exact wire contract the frontend depends on:
+    the assessment.decision field must carry the enum *value*
+    ("probe_for_clarity"), not the enum name ("PROBE_FOR_CLARITY").
+    """
+
+    def _make_question(self, qid="q1", text="Tell me about React."):
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        return Question(
+            id=qid,
+            text=text,
+            type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED,
+            focus_area="frontend",
+            expected_evidence=["hooks", "components"],
+        )
+
+    def _make_probe_assessment(self):
+        from backend.domain.value_objects.assessment import (
+            AnswerAssessment, AssessmentDecision, AnswerQuality,
+        )
+        return AnswerAssessment(
+            quality=AnswerQuality.VAGUE,
+            confidence=0.7,
+            key_points_identified=[],
+            gaps_identified=["no specific example"],
+            decision=AssessmentDecision.PROBE_FOR_CLARITY,
+            reasoning="Answer too vague, needs specific example.",
+        )
+
+    def _make_proceed_assessment(self):
+        from backend.domain.value_objects.assessment import (
+            AnswerAssessment, AssessmentDecision, AnswerQuality,
+        )
+        return AnswerAssessment(
+            quality=AnswerQuality.ADEQUATE,
+            confidence=0.8,
+            key_points_identified=["relevant experience"],
+            gaps_identified=[],
+            decision=AssessmentDecision.PROCEED_TO_NEXT_QUESTION,
+            reasoning="Adequate answer.",
+        )
+
+    def test_probe_returns_enum_value_not_name(self):
+        """assessment.decision must be 'probe_for_clarity' (value), not 'PROBE_FOR_CLARITY' (name).
+
+        Regression: frontend checked === 'PROBE_FOR_CLARITY' which never matched
+        the backend's 'probe_for_clarity', causing the question counter to
+        increment past the total ('Question 4 of 3').
+        """
+        q1 = self._make_question()
+        probe_q = self._make_question(qid="q1-probe", text="Give a specific example.")
+        probe_assessment = self._make_probe_assessment()
+
+        servicer = ScreeningServicer()
+        servicer._question_generator = MagicMock()
+        servicer._question_generator.generate_initial_questions.return_value = [q1]
+        servicer._question_generator.generate_follow_up_probe.return_value = probe_q
+        servicer._answer_assessor = MagicMock()
+        servicer._answer_assessor.assess.return_value = probe_assessment
+
+        # Start screening
+        start_resp = servicer.StartScreening(
+            screening_pb2.StartScreeningRequest(
+                candidate_id="c1", job_id="j1",
+                match_tier="STRONG_MATCH", question_count=1,
+            ),
+            MagicMock(),
+        )
+        assert start_resp.success
+
+        # Submit vague answer
+        answer_resp = servicer.SubmitAnswer(
+            screening_pb2.SubmitAnswerRequest(
+                screening_id=start_resp.screening_id,
+                candidate_id="c1",
+                question_id=start_resp.first_question.id,
+                answer_text="I use React sometimes.",
+            ),
+            MagicMock(),
+        )
+
+        # The wire contract: decision is the lowercase enum VALUE
+        assert answer_resp.assessment.decision == "probe_for_clarity"
+        assert answer_resp.assessment.decision != "PROBE_FOR_CLARITY"
+
+        # A follow-up probe question is returned
+        assert answer_resp.next_question is not None
+        assert answer_resp.next_question.text == "Give a specific example."
+        assert not answer_resp.is_complete
+
+        # The session index did NOT advance (probe stays on same slot)
+        session = servicer._sessions[start_resp.screening_id]
+        assert session.current_question_index == 0
+
+        # generate_follow_up_probe was called
+        servicer._question_generator.generate_follow_up_probe.assert_called_once()
+
+    def test_probe_then_proceed_completes_correctly(self):
+        """After a probe, a PROCEED decision must advance and complete at the right count."""
+        q1 = self._make_question()
+        q2 = self._make_question(qid="q2", text="Tell me about state management.")
+        probe_q = self._make_question(qid="q1-probe", text="Give a specific example.")
+
+        servicer = ScreeningServicer()
+        servicer._question_generator = MagicMock()
+        servicer._question_generator.generate_initial_questions.return_value = [q1, q2]
+        servicer._question_generator.generate_follow_up_probe.return_value = probe_q
+
+        # First assess → PROBE, second assess → PROCEED
+        servicer._answer_assessor = MagicMock()
+        servicer._answer_assessor.assess.side_effect = [
+            self._make_probe_assessment(),
+            self._make_proceed_assessment(),
+            self._make_proceed_assessment(),
+        ]
+
+        # Start screening (2 questions)
+        start_resp = servicer.StartScreening(
+            screening_pb2.StartScreeningRequest(
+                candidate_id="c1", job_id="j1",
+                match_tier="STRONG_MATCH", question_count=2,
+            ),
+            MagicMock(),
+        )
+        screening_id = start_resp.screening_id
+        current_qid = start_resp.first_question.id
+
+        # Answer Q1 → PROBE
+        resp1 = servicer.SubmitAnswer(
+            screening_pb2.SubmitAnswerRequest(
+                screening_id=screening_id, candidate_id="c1",
+                question_id=current_qid, answer_text="vague answer",
+            ),
+            MagicMock(),
+        )
+        assert resp1.assessment.decision == "probe_for_clarity"
+        assert not resp1.is_complete
+        session = servicer._sessions[screening_id]
+        assert session.current_question_index == 0  # stayed on Q1 slot
+
+        # Answer probe → PROCEED (advances to Q2)
+        current_qid = resp1.next_question.id
+        resp2 = servicer.SubmitAnswer(
+            screening_pb2.SubmitAnswerRequest(
+                screening_id=screening_id, candidate_id="c1",
+                question_id=current_qid, answer_text="detailed answer with specifics",
+            ),
+            MagicMock(),
+        )
+        assert resp2.assessment.decision == "proceed_to_next"
+        assert not resp2.is_complete
+        session = servicer._sessions[screening_id]
+        assert session.current_question_index == 1  # advanced to Q2 slot
+
+        # Answer Q2 → PROCEED (completes)
+        current_qid = resp2.next_question.id
+        resp3 = servicer.SubmitAnswer(
+            screening_pb2.SubmitAnswerRequest(
+                screening_id=screening_id, candidate_id="c1",
+                question_id=current_qid, answer_text="detailed answer",
+            ),
+            MagicMock(),
+        )
+        assert resp3.is_complete
+
+    def test_all_decision_values_are_enum_values_not_names(self):
+        """Every AssessmentDecision must serialize as its .value (lowercase), not its name."""
+        from backend.domain.value_objects.assessment import AssessmentDecision
+
+        for decision in AssessmentDecision:
+            # The protobuf field is a plain string carrying .value
+            assert decision.value != decision.name, (
+                f"{decision.name} value and name are identical — enum contract broken"
+            )
+            assert decision.value == decision.value.lower(), (
+                f"{decision.name} value '{decision.value}' is not lowercase"
+            )

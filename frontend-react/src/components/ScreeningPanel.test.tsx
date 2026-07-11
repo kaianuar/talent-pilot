@@ -52,7 +52,7 @@ const submitAnswerNextResponse: SubmitAnswerResponse = {
     confidence: 0.8,
     keyPointsIdentified: ['state management'],
     gapsIdentified: [],
-    decision: 'PROCEED_TO_NEXT_QUESTION',
+    decision: 'proceed_to_next',
     reasoning: 'Solid answer with relevant examples',
   },
   nextQuestion: {
@@ -74,7 +74,7 @@ const submitAnswerCompleteResponse: SubmitAnswerResponse = {
     confidence: 0.95,
     keyPointsIdentified: ['leadership', 'technical depth'],
     gapsIdentified: [],
-    decision: 'SKIP_TO_EMAIL',
+    decision: 'skip_to_email',
     reasoning: 'Outstanding candidate',
   },
   nextQuestion: undefined,
@@ -250,7 +250,7 @@ describe('ScreeningPanel', () => {
       assessment: {
         quality: 'good',
         confidence: 0.8,
-        decision: 'PASS',
+        decision: 'proceed_to_next',
         reasoning: 'Good technical depth',
       },
     });
@@ -390,5 +390,119 @@ describe('ScreeningPanel', () => {
     await user.click(screen.getByRole('button', { name: /Go Back/i }));
 
     expect(defaultProps.onCancel).toHaveBeenCalled();
+  });
+
+  it('increments both counter and total on probe (no "Question 4 of 3")', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    // First answer → probe_for_clarity (additional question needed)
+    mockSubmitAnswer.mockResolvedValueOnce({
+      assessment: {
+        questionId: 'q1',
+        quality: 'vague',
+        confidence: 0.6,
+        keyPointsIdentified: [],
+        gapsIdentified: ['no specific example'],
+        decision: 'probe_for_clarity',
+        reasoning: 'Answer is too vague — probing for specifics.',
+      },
+      nextQuestion: {
+        id: 'q1-probe',
+        text: 'Can you walk me through a specific project where you used OAuth?',
+        type: 'GAP_PROBE',
+        focusArea: 'oauth',
+        expectedEvidence: ['specific project', 'token storage'],
+        priority: 'REQUIRED',
+      },
+      isComplete: false,
+      emailDraft: undefined,
+    });
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'I have used OAuth.');
+
+    // After probe: counter 1→2, total 3→4 → "Question 2 of 4"
+    await waitFor(() => {
+      expect(screen.getByText('Question 2 of 4')).toBeInTheDocument();
+    }, { timeout: 3000 });
+
+    expect(
+      screen.getByText('Can you walk me through a specific project where you used OAuth?')
+    ).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('counter never exceeds total across multiple probes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    // Q1 answer → probe, Q1-probe answer → probe again
+    mockSubmitAnswer.mockResolvedValueOnce({
+      assessment: {
+        questionId: 'q1',
+        quality: 'vague',
+        confidence: 0.5,
+        keyPointsIdentified: [],
+        gapsIdentified: ['no specifics'],
+        decision: 'probe_for_clarity',
+        reasoning: 'Too vague.',
+      },
+      nextQuestion: {
+        id: 'q1-probe-1',
+        text: 'Give me a specific example.',
+        type: 'GAP_PROBE',
+        focusArea: 'frontend',
+        expectedEvidence: ['example'],
+        priority: 'REQUIRED',
+      },
+      isComplete: false,
+      emailDraft: undefined,
+    });
+    mockSubmitAnswer.mockResolvedValueOnce({
+      assessment: {
+        questionId: 'q1-probe-1',
+        quality: 'vague',
+        confidence: 0.5,
+        keyPointsIdentified: [],
+        gapsIdentified: ['still vague'],
+        decision: 'probe_for_clarity',
+        reasoning: 'Still too vague.',
+      },
+      nextQuestion: {
+        id: 'q1-probe-2',
+        text: 'What project did you work on?',
+        type: 'GAP_PROBE',
+        focusArea: 'frontend',
+        expectedEvidence: ['project name'],
+        priority: 'REQUIRED',
+      },
+      isComplete: false,
+      emailDraft: undefined,
+    });
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    // First probe: 1→2, total 3→4
+    await fillAndSubmitAnswer(user, 'I use React.');
+    await waitFor(() => {
+      expect(screen.getByText('Question 2 of 4')).toBeInTheDocument();
+    }, { timeout: 3000 });
+
+    // Second probe: 2→3, total 4→5
+    await fillAndSubmitAnswer(user, 'I built a web app.');
+    await waitFor(() => {
+      expect(screen.getByText('Question 3 of 5')).toBeInTheDocument();
+    }, { timeout: 3000 });
+
+    vi.useRealTimers();
   });
 });
