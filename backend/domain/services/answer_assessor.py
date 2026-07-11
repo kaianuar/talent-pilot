@@ -202,17 +202,53 @@ Return as JSON:
             
             result = json.loads(response)
             
+            # Parse quality with normalization — LLMs often return synonyms
+            raw_quality = result.get("quality", "adequate").lower().strip()
+            _quality_map = {
+                "strong": AnswerQuality.STRONG,
+                "excellent": AnswerQuality.STRONG,
+                "good": AnswerQuality.ADEQUATE,
+                "adequate": AnswerQuality.ADEQUATE,
+                "acceptable": AnswerQuality.ADEQUATE,
+                "moderate": AnswerQuality.ADEQUATE,
+                "vague": AnswerQuality.VAGUE,
+                "poor": AnswerQuality.VAGUE,
+                "weak": AnswerQuality.VAGUE,
+                "irrelevant": AnswerQuality.IRRELEVANT,
+                "off-topic": AnswerQuality.IRRELEVANT,
+                "contradictory": AnswerQuality.CONTRADICTORY,
+            }
+            quality = _quality_map.get(raw_quality, AnswerQuality.ADEQUATE)
+            
+            # Parse decision with normalization
+            raw_decision = result.get("decision", "proceed_to_next").lower().strip()
+            _decision_map = {
+                "proceed_to_next": AssessmentDecision.PROCEED_TO_NEXT_QUESTION,
+                "proceed_to_next_question": AssessmentDecision.PROCEED_TO_NEXT_QUESTION,
+                "proceed": AssessmentDecision.PROCEED_TO_NEXT_QUESTION,
+                "next": AssessmentDecision.PROCEED_TO_NEXT_QUESTION,
+                "probe_for_clarity": AssessmentDecision.PROBE_FOR_CLARITY,
+                "probe": AssessmentDecision.PROBE_FOR_CLARITY,
+                "clarify": AssessmentDecision.PROBE_FOR_CLARITY,
+                "skip_to_email": AssessmentDecision.SKIP_TO_EMAIL,
+                "skip": AssessmentDecision.SKIP_TO_EMAIL,
+                "email": AssessmentDecision.SKIP_TO_EMAIL,
+                "reject_candidate": AssessmentDecision.REJECT_CANDIDATE,
+                "reject": AssessmentDecision.REJECT_CANDIDATE,
+            }
+            decision = _decision_map.get(raw_decision, AssessmentDecision.PROCEED_TO_NEXT_QUESTION)
+            
             return AnswerAssessment(
-                quality=result["quality"],
-                confidence=result["confidence"],
+                quality=quality,
+                confidence=result.get("confidence", 0.5),
                 key_points_identified=result.get("key_points_identified", []),
                 gaps_identified=result.get("gaps_identified", []),
-                decision=result["decision"],
-                reasoning=result["reasoning"],
+                decision=decision,
+                reasoning=result.get("reasoning", "No reasoning provided"),
             )
             
         except Exception as e:
-            # Fallback if LLM fails
+            # Fallback if LLM fails entirely (network error, invalid JSON, etc.)
             return AnswerAssessment(
                 quality=AnswerQuality.ADEQUATE,
                 confidence=0.5,

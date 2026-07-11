@@ -361,3 +361,133 @@ class TestAnswerAssessmentVO:
         )
         # Unknown tier defaults to VAGUE threshold
         assert assessment.is_sufficient_for_tier("UNKNOWN_TIER")
+
+
+
+class TestLLMEnumNormalization:
+    """Verify _llm_assess normalizes LLM enum strings instead of crashing.
+
+    Regression: the LLM returning 'good' or 'PROCEED_TO_NEXT_QUESTION'
+    caused AnswerAssessment() to raise ValueError (invalid enum value),
+    caught by the blanket except, producing 'Defaulting to proceed.'
+    """
+
+    def _make_assessor(self, llm_response: dict) -> AnswerAssessor:
+        mock_client = MagicMock(spec=LLMClient)
+        mock_client.complete.return_value = json.dumps(llm_response)
+        return AnswerAssessor(llm_client=mock_client)
+
+    def test_quality_good_maps_to_adequate(self, sample_question):
+        assessor = self._make_assessor({
+            "quality": "good",
+            "confidence": 0.7,
+            "key_points_identified": [],
+            "gaps_identified": [],
+            "decision": "proceed_to_next",
+            "reasoning": "Ok answer.",
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "I built a scalable system with Redis caching and horizontal scaling. "
+            "The system handled 10K req/s with p99 latency under 200ms."
+        ))
+        assert result.quality == AnswerQuality.ADEQUATE
+        assert result.decision == AssessmentDecision.PROCEED_TO_NEXT_QUESTION
+
+    def test_uppercase_enum_names_normalize(self, sample_question):
+        assessor = self._make_assessor({
+            "quality": "STRONG",
+            "confidence": 0.9,
+            "key_points_identified": ["architecture"],
+            "gaps_identified": [],
+            "decision": "PROCEED_TO_NEXT_QUESTION",
+            "reasoning": "Strong answer.",
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "I designed a system with Redis, horizontal scaling, and consistent hashing. "
+            "We handled 50K requests per second with five replicas across three AZs."
+        ))
+        assert result.quality == AnswerQuality.STRONG
+        assert result.decision == AssessmentDecision.PROCEED_TO_NEXT_QUESTION
+
+    def test_probe_synonyms_normalize(self, sample_question):
+        assessor = self._make_assessor({
+            "quality": "vague",
+            "confidence": 0.6,
+            "key_points_identified": [],
+            "gaps_identified": ["no specifics"],
+            "decision": "probe",
+            "reasoning": "Needs more detail.",
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "I have experience with scalable systems and distributed computing."
+        ))
+        assert result.quality == AnswerQuality.VAGUE
+        assert result.decision == AssessmentDecision.PROBE_FOR_CLARITY
+
+    def test_excellent_maps_to_strong(self, sample_question):
+        assessor = self._make_assessor({
+            "quality": "excellent",
+            "confidence": 0.95,
+            "key_points_identified": ["Redis", "horizontal scaling", "p99 latency"],
+            "gaps_identified": [],
+            "decision": "skip_to_email",
+            "reasoning": "Outstanding.",
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "I designed a distributed caching layer with Redis cluster and consistent hashing. "
+            "We achieved 50K req/s with p99 under 100ms. Used circuit breakers for resilience."
+        ))
+        assert result.quality == AnswerQuality.STRONG
+        assert result.decision == AssessmentDecision.SKIP_TO_EMAIL
+
+    def test_unknown_quality_defaults_to_adequate(self, sample_question):
+        assessor = self._make_assessor({
+            "quality": "totally_unknown_rating",
+            "confidence": 0.5,
+            "key_points_identified": [],
+            "gaps_identified": [],
+            "decision": "proceed_to_next",
+            "reasoning": "Ok.",
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "For example, at my previous company we implemented a horizontally "
+            "scaled system using Redis caching and consistent hashing across "
+            "three availability zones. The architecture handled 15K requests "
+            "per second and the project was delivered in 8 weeks."
+        ))
+        assert result.quality == AnswerQuality.ADEQUATE
+
+    def test_unknown_decision_defaults_to_proceed(self, sample_question):
+        assessor = self._make_assessor({
+            "quality": "adequate",
+            "confidence": 0.6,
+            "key_points_identified": [],
+            "gaps_identified": [],
+            "decision": "some_unknown_decision",
+            "reasoning": "Decent.",
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "Specifically, we implemented a distributed caching layer with "
+            "Redis cluster. The architecture used consistent hashing and "
+            "I led the design of the failover mechanism across three data "
+            "centers, which handled over 20K requests per second."
+        ))
+        assert result.decision == AssessmentDecision.PROCEED_TO_NEXT_QUESTION
+
+    def test_missing_fields_use_defaults(self, sample_question):
+        """LLM returns minimal JSON — no crash, sensible defaults."""
+        assessor = self._make_assessor({
+            "quality": "adequate",
+            "decision": "proceed_to_next",
+            "reasoning": "Ok answer.",
+            # missing confidence, key_points, gaps
+        })
+        result = assessor.assess(sample_question, _make_answer(
+            "For example, at my previous company we implemented a distributed "
+            "caching layer with Redis cluster. The architecture used consistent "
+            "hashing and I led the design of the failover mechanism across "
+            "three availability zones, handling 15K requests per second."
+        ))
+        assert result.confidence == 0.5  # default
+        assert result.key_points_identified == []  # default
+        assert result.gaps_identified == []  # default
