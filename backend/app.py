@@ -301,7 +301,7 @@ def _batch_llm_reasoning(
     )
 
     try:
-        client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
+        client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY, timeout=15.0, max_retries=0)
         response = client.chat.completions.create(
             model=MODEL_REASONING,
             messages=[
@@ -309,7 +309,7 @@ def _batch_llm_reasoning(
                 {"role": "user", "content": prompt},
             ],
             temperature=0.2,
-            max_tokens=1500,
+            max_tokens=1000,
             response_format={"type": "json_object"},
         )
         data = json.loads(response.choices[0].message.content)
@@ -329,7 +329,6 @@ def _batch_llm_reasoning(
     except Exception as e:
         logger.warning("LLM reasoning batch failed: %s — falling back to deterministic-only scores", e)
         return {}
-
 
 def _compute_match(
     candidate_skills: list[str],
@@ -415,11 +414,15 @@ async def match_candidate(req: MatchRequest):
 
     jobs = list_jobs()
 
-    # Single LLM call for all job ratings
-    llm_reasoning = _batch_llm_reasoning(skills, years, jobs)
+    # Pre-filter: deterministic scores first, then LLM-reason only the top matches
+    preliminary = [_compute_match(skills, years, j) for j in jobs]
+    preliminary.sort(key=lambda m: m["match_score"], reverse=True)
+    top_jobs = [j for j, m in zip(jobs, preliminary) if m["match_score"] >= SCORE_WEAK][:10]
+
+    # Single LLM call for top job ratings only
+    llm_reasoning = _batch_llm_reasoning(skills, years, top_jobs) if top_jobs else {}
 
     matches = [_compute_match(skills, years, j, llm_reasoning) for j in jobs]
-    matches.sort(key=lambda m: m["match_score"], reverse=True)
 
     log_audit(
         action="match_computed",
