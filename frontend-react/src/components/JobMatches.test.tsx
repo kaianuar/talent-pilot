@@ -180,7 +180,7 @@ describe('JobMatches', () => {
     expect(mockStore.setSelectedJob).toHaveBeenCalledWith('j1', 'Frontend Developer');
   });
 
-  it('renders multiple match cards with different tiers', () => {
+  it('renders multiple match cards with different tiers (above threshold)', () => {
     matchesReturn = {
       data: [sampleMatch, partialMatch, poorMatch],
       isLoading: false,
@@ -189,12 +189,15 @@ describe('JobMatches', () => {
 
     renderWithProviders(<JobMatches candidateId="c1" />);
 
+    // sampleMatch (0.85) and partialMatch (0.55) are above 0.50 threshold
     expect(screen.getByText('Frontend Developer')).toBeInTheDocument();
     expect(screen.getByText('Backend Developer')).toBeInTheDocument();
-    expect(screen.getByText('Data Scientist')).toBeInTheDocument();
     expect(screen.getByText('Strong Match')).toBeInTheDocument();
     expect(screen.getByText('Partial Match')).toBeInTheDocument();
-    expect(screen.getByText('Poor Match')).toBeInTheDocument();
+
+    // poorMatch (0.25) is filtered out — below 0.50 threshold
+    expect(screen.queryByText('Data Scientist')).not.toBeInTheDocument();
+    expect(screen.queryByText('Poor Match')).not.toBeInTheDocument();
   });
 
   it('displays match count badge', () => {

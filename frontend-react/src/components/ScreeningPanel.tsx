@@ -183,10 +183,12 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
     const { result } = state;
     const draft = result.emailDraft;
     const summary = result.summary;
+    const isRejected = summary?.status === 'REJECTED';
+
     return (
       <Paper elevation={1} sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <CheckCircleIcon color="success" />
+          <CheckCircleIcon color={isRejected ? 'error' : 'success'} />
           <Typography variant="h6">Screening Complete</Typography>
         </Box>
 
@@ -200,7 +202,7 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
             <Chip
               label={`Status: ${summary.status}`}
               size="small"
-              color={summary.sufficientEvidence ? 'success' : 'warning'}
+              color={isRejected ? 'error' : summary.sufficientEvidence ? 'success' : 'warning'}
             />
             {summary.finalAssessment && (
               <Typography variant="body2" sx={{ mt: 1 }}>
@@ -210,7 +212,7 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
           </Box>
         )}
 
-        {draft && (
+        {draft && !isRejected && (
           <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
             <Typography variant="subtitle2" gutterBottom>Email Draft</Typography>
             <Typography variant="caption" color="text.secondary">To: {draft.to}</Typography>
@@ -221,10 +223,14 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
         )}
 
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button variant="contained" color="success" onClick={() => onComplete?.(result)}>
-            Send to Recruiter
+          {!isRejected && (
+            <Button variant="contained" color="success" onClick={() => onComplete?.(result)}>
+              Send to Recruiter
+            </Button>
+          )}
+          <Button variant="outlined" onClick={onCancel}>
+            {isRejected ? 'Back to Chat' : 'Close'}
           </Button>
-          <Button variant="outlined" onClick={onCancel}>Close</Button>
         </Box>
       </Paper>
     );

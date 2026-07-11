@@ -51,14 +51,24 @@ const getMatchLabel = (tier: JobMatch['tier']) => {
   }
 };
 
+const MIN_MATCH_SCORE = 0.50;
+
 const JobMatches: React.FC<JobMatchesProps> = ({ candidateId }) => {
   const {
-    data: matches,
+    data: rawMatches,
     isLoading,
     isError,
   } = useMatches(candidateId || '', {
     enabled: !!candidateId,
   });
+
+  // Filter out weak matches and sort by score descending
+  const matches = React.useMemo(() => {
+    if (!rawMatches) return undefined;
+    return rawMatches
+      .filter((m) => m.match_score >= MIN_MATCH_SCORE)
+      .sort((a, b) => b.match_score - a.match_score);
+  }, [rawMatches]);
 
   const matchJobsMutation = useMatchJobs();
 

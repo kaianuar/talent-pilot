@@ -505,4 +505,38 @@ describe('ScreeningPanel', () => {
 
     vi.useRealTimers();
   });
+
+  it('hides Send to Recruiter and shows Back to Chat on rejection', async () => {
+    const rejectedResult: GetScreeningResultResponse = {
+      ...finalResult,
+      summary: {
+        ...finalResult.summary!,
+        status: 'REJECTED',
+        sufficientEvidence: false,
+        finalAssessment: 'Unfortunately, your experience does not align with this role.',
+      },
+      emailDraft: undefined,
+    };
+    mockGetScreeningResult.mockResolvedValue(rejectedResult);
+    mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'Answer');
+
+    await waitFor(() => {
+      expect(screen.getByText('Screening Complete')).toBeInTheDocument();
+    });
+
+    // "Send to Recruiter" should NOT appear for rejected candidates
+    expect(screen.queryByRole('button', { name: /Send to Recruiter/i })).not.toBeInTheDocument();
+    // Should show "Back to Chat" instead of "Close"
+    expect(screen.getByRole('button', { name: /Back to Chat/i })).toBeInTheDocument();
+    // Rejection feedback should be visible
+    expect(screen.getByText(/does not align/)).toBeInTheDocument();
+  });
 });

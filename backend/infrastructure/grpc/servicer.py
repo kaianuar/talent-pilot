@@ -371,7 +371,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
                 candidate_id=session.candidate_id,
                 job_id=session.job_id,
                 status=session.status.value,
-                total_questions_asked=session.current_question_index,
+                total_questions_asked=session.questions_answered,
                 final_assessment=session.termination_reason or "In Progress",
                 sufficient_evidence=session.sufficient_evidence,
                 termination_reason=session.termination_reason or "",

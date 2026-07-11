@@ -179,6 +179,10 @@ Evaluate on:
 1. Specificity: Did they give concrete examples or stay generic?
 2. Depth: Did they demonstrate real understanding or surface knowledge?
 3. Relevance: Did they actually answer the question asked?
+   IMPORTANT: The answer is relevant if it addresses the QUESTION'S TOPIC.
+   Do NOT assume the question is about a specific technology unless the
+   question explicitly names it. A Laravel answer to an authentication
+   question IS relevant — Laravel handles authentication.
 4. Evidence: Did they include the expected elements?
 
 Return as JSON:
@@ -188,7 +192,7 @@ Return as JSON:
   "key_points_identified": ["specific thing 1", "specific thing 2"],
   "gaps_identified": ["missing element 1", "missing element 2"],
   "decision": "proceed_to_next|probe_for_clarity|skip_to_email|reject_candidate",
-  "reasoning": "Why this assessment was made"
+  "reasoning": "Brief feedback addressing the candidate directly using 'you/your'. Be encouraging and specific about what to improve. Max 2 sentences."
 }}"""
 
         try:
