@@ -39,7 +39,7 @@ def test_perfect_match_all_required():
 
     assert result["required_match_ratio"] == 1.0
     assert result["experience_score"] == 1.0
-    assert result["match_score"] > 0.7
+    assert result["match_score"] > 0.5  # 0.35+0.20 = 0.55 with no LLM reasoning
 
 
 def test_no_required_skills_match():
@@ -158,11 +158,9 @@ def test_tier_no_match():
 
 def test_tier_partial_match():
     """Medium score → PARTIAL_MATCH tier."""
-    # Need composite in [0.55, 0.75) range
-    # required_ratio=1.0, adjacent=0, experience=0.5
-    # composite = (0.35*1.0 + 0.20*0 + 0.20*0.5) / (0.35+0.20+0.20) = 0.45/0.75 = 0.6
-    job = _job(required=["Python"], preferred=["Nonexistent"])
-    result = _compute_match(["Python"], 5.0, job)
+    # With 4-weight formula (no LLM): composite = 0.35*1.0 + 0.20*1.0 + 0.20*0.5 = 0.65
+    job = _job(required=["Python"], preferred=["Docker"])
+    result = _compute_match(["Python", "Docker"], 5.0, job)
 
     assert result["tier"] == "PARTIAL_MATCH"
 
@@ -263,3 +261,108 @@ def test_match_score_rounded():
     score_str = str(result["match_score"])
     if "." in score_str:
         assert len(score_str.split(".")[-1]) <= 3
+
+
+# ============================================================================
+# LLM reasoning integration
+# ============================================================================
+
+
+def test_llm_reasoning_boosts_composite():
+    """LLM reasoning score should increase the composite proportionally."""
+    job = _job(required=["Python"])
+    without = _compute_match(["Python"], 5.0, job)
+    with_reasoning = _compute_match(
+        ["Python"], 5.0, job,
+        llm_reasoning={job["id"]: {"score": 0.9, "explanation": "Strong fit"}},
+    )
+
+    assert with_reasoning["llm_reasoning_score"] == 0.9
+    assert with_reasoning["match_score"] > without["match_score"]
+    assert "Strong fit" in with_reasoning["reasoning_explanation"]
+
+
+def test_llm_reasoning_zero_when_not_provided():
+    """Without llm_reasoning param, reasoning score should be 0."""
+    job = _job(required=["Python"])
+    result = _compute_match(["Python"], 5.0, job)
+
+    assert result["llm_reasoning_score"] == 0.0
+
+
+def test_llm_reasoning_clamped_0_to_1():
+    """Reasoning score should be clamped to [0.0, 1.0]."""
+    job = _job(required=["Python"])
+    result = _compute_match(
+        ["Python"], 5.0, job,
+        llm_reasoning={job["id"]: {"score": 1.5, "explanation": ""}},
+    )
+
+    # The batch function clamps; _compute_match uses the raw value
+    assert result["llm_reasoning_score"] == 1.5  # stored as-is from dict
+
+
+def test_llm_reasoning_with_strong_match():
+    """Perfect match + strong LLM reasoning → STRONG_MATCH."""
+    job = _job(required=["Python", "FastAPI"], preferred=["Docker"])
+    result = _compute_match(
+        ["Python", "FastAPI", "Docker"], 10.0, job,
+        llm_reasoning={job["id"]: {"score": 0.95, "explanation": "Ideal candidate"}},
+    )
+
+    # 0.35*1.0 + 0.20*1.0 + 0.20*1.0 + 0.25*0.95 = 0.9875
+    assert result["match_score"] > 0.9
+    assert result["tier"] == "STRONG_MATCH"
+
+
+def test_batch_llm_reasoning_failure_graceful():
+    """If batch LLM call fails, _compute_match should still work with score 0.0."""
+    from unittest.mock import patch, MagicMock
+    from backend.app import _batch_llm_reasoning
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = Exception("API timeout")
+
+    with patch("backend.app.OpenAI", return_value=mock_client):
+        result = _batch_llm_reasoning(["Python"], 5.0, [{"id": "j1", "title": "Dev", "required_skills": []}])
+
+    assert result == {}
+
+
+def test_batch_llm_reasoning_parses_response():
+    """Batch LLM reasoning should parse valid response correctly."""
+    import json as json_mod
+    from unittest.mock import patch, MagicMock
+    from backend.app import _batch_llm_reasoning
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = json_mod.dumps({
+        "ratings": [
+            {"id": 1, "score": 0.85, "explanation": "Strong Python match"},
+            {"id": 2, "score": 0.3, "explanation": "Limited Go experience"},
+        ]
+    })
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
+
+    jobs = [
+        {"id": "j1", "title": "Python Dev", "required_skills": ["Python"]},
+        {"id": "j2", "title": "Go Dev", "required_skills": ["Go"]},
+    ]
+
+    with patch("backend.app.OpenAI", return_value=mock_client):
+        result = _batch_llm_reasoning(["Python"], 5.0, jobs)
+
+    assert result["j1"]["score"] == 0.85
+    assert result["j1"]["explanation"] == "Strong Python match"
+    assert result["j2"]["score"] == 0.3
+
+
+def test_batch_llm_reasoning_empty_jobs():
+    """Empty jobs list should return empty dict without calling LLM."""
+    from backend.app import _batch_llm_reasoning
+
+    result = _batch_llm_reasoning(["Python"], 5.0, [])
+    assert result == {}

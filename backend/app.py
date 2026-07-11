@@ -272,7 +272,71 @@ class MatchRequest(BaseModel):
 class MatchResponse(BaseModel):
     matches: list[dict]
 
-def _compute_match(candidate_skills: list[str], candidate_years: float, job: dict) -> dict:
+
+def _batch_llm_reasoning(
+    skills: list[str], years: float, jobs: list[dict]
+) -> dict[str, dict]:
+    """Single LLM call to rate candidate-job fit for ALL jobs at once.
+
+    Returns {job_id: {"score": float, "explanation": str}}.
+    On any failure, returns empty dict (caller falls back to 0.0).
+    """
+    if not QWEN_API_KEY or not jobs:
+        return {}
+
+    job_summaries = [
+        f'{i+1}. "{j["title"]}" — required: {", ".join(s if isinstance(s, str) else s.get("name","") for s in j.get("required_skills", []))}'
+        for i, j in enumerate(jobs)
+    ]
+
+    prompt = (
+        f"Candidate skills: {', '.join(skills) if skills else 'none listed'}\n"
+        f"Years of experience: {years:.0f}\n\n"
+        f"Rate how well this candidate fits each job (0.0-1.0), considering:\n"
+        f"- Depth of experience vs requirements\n"
+        f"- Project relevance and trajectory\n"
+        f"- Transferable skills and growth potential\n\n"
+        f"Jobs:\n" + "\n".join(job_summaries) + "\n\n"
+        f'Return JSON: {{"ratings": [{{"id": <number>, "score": <0.0-1.0>, "explanation": "<1 sentence>"}}]}}'
+    )
+
+    try:
+        client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
+        response = client.chat.completions.create(
+            model=MODEL_REASONING,
+            messages=[
+                {"role": "system", "content": "You are a technical recruiting analyst. Rate candidate-job fit objectively. Reply with JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=1500,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(response.choices[0].message.content)
+        ratings = data.get("ratings", data if isinstance(data, list) else [])
+
+        result = {}
+        for i, r in enumerate(ratings):
+            idx = r.get("id", i + 1) - 1  # 1-indexed to 0-indexed
+            if 0 <= idx < len(jobs):
+                job_id = jobs[idx]["id"]
+                result[job_id] = {
+                    "score": max(0.0, min(1.0, float(r.get("score", 0.5)))),
+                    "explanation": r.get("explanation", ""),
+                }
+        return result
+
+    except Exception as e:
+        logger.warning("LLM reasoning batch failed: %s — falling back to deterministic-only scores", e)
+        return {}
+
+
+def _compute_match(
+    candidate_skills: list[str],
+    candidate_years: float,
+    job: dict,
+    llm_reasoning: dict | None = None,
+) -> dict:
     """Compute a match score between a candidate and a job."""
     def _names(skills):
         return [s if isinstance(s, str) else s.get("name", "") for s in skills]
@@ -294,14 +358,18 @@ def _compute_match(candidate_skills: list[str], candidate_years: float, job: dic
     exp_years = candidate_years or 0
     experience_score = min(exp_years / 10.0, 1.0)
 
-    # Composite score
+    # LLM reasoning score (from batch call)
+    reasoning_info = (llm_reasoning or {}).get(job["id"], {})
+    reasoning_score = reasoning_info.get("score", 0.0)
+    reasoning_explanation = reasoning_info.get("explanation", "")
+
+    # Composite score — all 4 weights (sum to 1.0)
     composite = (
         W_REQUIRED * required_ratio +
         W_ADJACENT * adjacent_bonus +
-        W_EXPERIENCE * experience_score
+        W_EXPERIENCE * experience_score +
+        W_REASONING * reasoning_score
     )
-    # Normalize remaining weight to LLM reasoning
-    composite = composite / (W_REQUIRED + W_ADJACENT + W_EXPERIENCE)
 
     # Tier classification
     if composite >= SCORE_STRONG:
@@ -313,6 +381,15 @@ def _compute_match(candidate_skills: list[str], candidate_years: float, job: dic
     else:
         tier = "NO_MATCH"
 
+    # Build explanation
+    explanation = (
+        f"Matched {len(matched_required)}/{len(required)} required skills"
+        + (f", {len(matched_nice)} nice-to-have skills" if matched_nice else "")
+        + f". {exp_years:.1f} years experience."
+    )
+    if reasoning_explanation:
+        explanation += f" LLM: {reasoning_explanation}"
+
     return {
         "job_id": job["id"],
         "job_title": job["title"],
@@ -321,12 +398,8 @@ def _compute_match(candidate_skills: list[str], candidate_years: float, job: dic
         "required_match_ratio": round(required_ratio, 3),
         "adjacent_bonus": round(adjacent_bonus, 3),
         "experience_score": round(experience_score, 3),
-        "llm_reasoning_score": 0.0,
-        "reasoning_explanation": (
-            f"Matched {len(matched_required)}/{len(required)} required skills"
-            + (f", {len(matched_nice)} nice-to-have skills" if matched_nice else "")
-            + f". {exp_years:.1f} years experience."
-        ),
+        "llm_reasoning_score": round(reasoning_score, 3),
+        "reasoning_explanation": explanation,
     }
 
 @app.post("/match", response_model=MatchResponse)
@@ -341,7 +414,11 @@ async def match_candidate(req: MatchRequest):
     years = parsed.get("years_experience", 0) or 0 if parsed else 0
 
     jobs = list_jobs()
-    matches = [_compute_match(skills, years, j) for j in jobs]
+
+    # Single LLM call for all job ratings
+    llm_reasoning = _batch_llm_reasoning(skills, years, jobs)
+
+    matches = [_compute_match(skills, years, j, llm_reasoning) for j in jobs]
     matches.sort(key=lambda m: m["match_score"], reverse=True)
 
     log_audit(
