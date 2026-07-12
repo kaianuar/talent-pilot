@@ -13,6 +13,8 @@ import type {
 const mockStartScreening = vi.fn();
 const mockSubmitAnswer = vi.fn();
 const mockGetScreeningResult = vi.fn();
+let submitApplicationError: Error | null = null;
+let submitApplicationPending = false;
 
 vi.mock('../api/grpcClient', () => ({
   startScreening: (...args: unknown[]) => mockStartScreening(...args),
@@ -22,6 +24,16 @@ vi.mock('../api/grpcClient', () => ({
 
 vi.mock('../api/useScreeningProgress', () => ({
   useScreeningProgress: () => ({ progress: null }),
+}));
+
+vi.mock('../api/hooks', () => ({
+  useSubmitApplication: () => {
+    const impl = async (vars: unknown) => {
+      if (submitApplicationError) throw submitApplicationError;
+      return { status: 'sent', message_id: 'm1', vars };
+    };
+    return { mutateAsync: impl, isPending: submitApplicationPending, isError: !!submitApplicationError };
+  },
 }));
 
 const successStartResponse: StartScreeningResponse = {
@@ -119,6 +131,7 @@ const defaultProps = {
   jobId: 'j1',
   jobTitle: 'Frontend Developer',
   matchTier: 'STRONG_MATCH',
+  matchScore: 0.85,
   onComplete: vi.fn(),
   onCancel: vi.fn(),
 };
@@ -144,6 +157,8 @@ describe('ScreeningPanel', () => {
     mockStartScreening.mockResolvedValue(successStartResponse);
     mockSubmitAnswer.mockResolvedValue(submitAnswerNextResponse);
     mockGetScreeningResult.mockResolvedValue(finalResult);
+    submitApplicationError = null;
+    submitApplicationPending = false;
   });
 
   it('shows loading state when starting', async () => {
@@ -387,8 +402,33 @@ describe('ScreeningPanel', () => {
     expect(defaultProps.onCancel).toHaveBeenCalled();
   });
 
-  it('calls onComplete when Send to Recruiter is clicked', async () => {
+  it('shows Sending state while submitApplication is in flight, then fires onComplete', async () => {
     mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'Answer');
+
+    await waitFor(() => {
+      expect(screen.getByText('Screening Complete')).toBeInTheDocument();
+    });
+
+    const sendBtn = screen.getByRole('button', { name: /Send to Recruiter/i });
+    await user.click(sendBtn);
+
+    // onComplete fires only after the mutation resolves.
+    await waitFor(() => {
+      expect(defaultProps.onComplete).toHaveBeenCalledWith(finalResult);
+    });
+  });
+
+  it('surfaces an inline error and keeps the panel mounted when send fails', async () => {
+    mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+    submitApplicationError = new Error('Email service unavailable');
 
     renderWithProviders(<ScreeningPanel {...defaultProps} />);
 
@@ -404,7 +444,46 @@ describe('ScreeningPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /Send to Recruiter/i }));
 
-    expect(defaultProps.onComplete).toHaveBeenCalledWith(finalResult);
+    // Error is surfaced; the panel does not unmount.
+    await waitFor(() => {
+      expect(screen.getByText('Email service unavailable')).toBeInTheDocument();
+    });
+    expect(defaultProps.onComplete).not.toHaveBeenCalled();
+
+    // Button relabels to Try Again and is enabled.
+    const retryBtn = screen.getByRole('button', { name: /Try Again/i });
+    expect(retryBtn).toBeEnabled();
+  });
+
+  it('recovers from a failed send and fires onComplete on retry', async () => {
+    mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+    submitApplicationError = new Error('Network timeout');
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'Answer');
+
+    await waitFor(() => {
+      expect(screen.getByText('Screening Complete')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Send to Recruiter/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Network timeout')).toBeInTheDocument();
+    });
+
+    // Clear the error and retry — should now succeed.
+    submitApplicationError = null;
+    await user.click(screen.getByRole('button', { name: /Try Again/i }));
+
+    await waitFor(() => {
+      expect(defaultProps.onComplete).toHaveBeenCalledWith(finalResult);
+    });
   });
 
   it('calls onCancel when Cancel Screening is clicked', async () => {

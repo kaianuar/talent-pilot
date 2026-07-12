@@ -25,6 +25,7 @@ import {
   getScreeningResult,
 } from '../api/grpcClient';
 import { useScreeningProgress } from '../api/useScreeningProgress';
+import { useSubmitApplication } from '../api/hooks';
 import type {
   StartScreeningResponse,
   SubmitAnswerResponse,
@@ -36,6 +37,7 @@ interface ScreeningPanelProps {
   jobId: string;
   jobTitle: string;
   matchTier: string;
+  matchScore: number;
   onComplete?: (result: GetScreeningResultResponse) => void;
   onCancel?: () => void;
 }
@@ -54,12 +56,16 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
   jobId,
   jobTitle,
   matchTier,
+  matchScore,
   onComplete,
   onCancel,
 }) => {
   const [state, setState] = useState<ScreenState>({ phase: 'idle' });
   const [answer, setAnswer] = useState('');
   const [questionNumber, setQuestionNumber] = useState(0);
+  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'error'>('idle');
+  const [sendError, setSendError] = useState<string | null>(null);
+  const submitApplication = useSubmitApplication();
 
   const screeningId = state.phase !== 'idle' && state.phase !== 'starting' && state.phase !== 'error'
     ? state.screeningId
@@ -161,6 +167,28 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
     }
   }, [state, answer, candidateId]);
 
+  // Submit the application to the recruiter. Shows progress + error inline
+  // so the candidate isn't left wondering what happened during the request.
+  // On success, fires onComplete (parent unmounts the panel and returns
+  // to chat). On error, keeps the panel mounted so the candidate can retry.
+  const handleSendApplication = useCallback(async (result: GetScreeningResultResponse) => {
+    setSendStatus('sending');
+    setSendError(null);
+    try {
+      await submitApplication.mutateAsync({
+        candidateId,
+        jobId,
+        matchScore,
+        matchTier,
+      });
+      setSendStatus('idle');
+      onComplete?.(result);
+    } catch (err) {
+      setSendStatus('error');
+      setSendError(err instanceof Error ? err.message : 'Failed to send application. Please try again.');
+    }
+  }, [candidateId, jobId, matchScore, matchTier, onComplete, submitApplication]);
+
   // --- Render by phase ---
 
   if (state.phase === 'idle' || state.phase === 'starting') {
@@ -224,15 +252,33 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
           </Paper>
         )}
 
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {sendStatus === 'error' && sendError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {sendError}
+          </Alert>
+        )}
+
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {!isRejected && (
-            <Button variant="contained" color="success" onClick={() => onComplete?.(result)}>
-              Send to Recruiter
+            <Button
+              variant="contained"
+              color="success"
+              onClick={() => handleSendApplication(result)}
+              disabled={sendStatus === 'sending'}
+              startIcon={sendStatus === 'sending' ? <CircularProgress size={16} color="inherit" /> : undefined}
+            >
+              {sendStatus === 'sending' ? 'Sending…' : sendStatus === 'error' ? 'Try Again' : 'Send to Recruiter'}
             </Button>
+          )}
+          {sendStatus === 'sending' && (
+            <Typography variant="body2" color="text.secondary">
+              Sending application to recruiter…
+            </Typography>
           )}
           <Button
             variant="outlined"
             onClick={onCancel}
+            disabled={sendStatus === 'sending'}
             aria-label={isRejected ? 'Back to chat' : 'Apply for a different position'}
           >
             {isRejected ? 'Back to Chat' : 'Apply for a Different Position'}

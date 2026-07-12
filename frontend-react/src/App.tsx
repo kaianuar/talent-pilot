@@ -14,7 +14,6 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import theme from './theme';
 import { useAppStore } from './store';
 import type { JobMatch } from './api/client';
-import { submitApplication } from './api/client';
 
 const ChatInterface = React.lazy(() => import('./components/ChatInterface'));
 const JobMatches = React.lazy(() => import('./components/JobMatches'));
@@ -40,15 +39,12 @@ const AppContent: React.FC = () => {
 
   const handleCandidateCreated = (id: string) => setCandidateId(id);
 
-  const handleSendApplication = async () => {
-    if (!candidateId || !selectedJobId) return;
-    const match = matches.find((m: JobMatch) => m.job_id === selectedJobId);
-    try {
-      await submitApplication(candidateId, selectedJobId, match?.match_score ?? 0, match?.tier ?? 'CONFIRMED');
-    } catch { /* silent */ }
+  // ScreeningPanel now handles the application submission itself, including
+  // progress and error UI. The parent only needs to clear the selected job
+  // after a successful send, which the panel triggers via onComplete.
+  const handleSendApplication = () => {
     clearSelectedJob();
   };
-
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       {/* Header */}
@@ -89,6 +85,7 @@ const AppContent: React.FC = () => {
                 jobId={selectedJobId}
                 jobTitle={selectedJobTitle || 'this position'}
                 matchTier={matches.find((m: JobMatch) => m.job_id === selectedJobId)?.tier || 'PARTIAL_MATCH'}
+                matchScore={matches.find((m: JobMatch) => m.job_id === selectedJobId)?.match_score ?? 0}
                 onComplete={handleSendApplication}
                 onCancel={clearSelectedJob}
               />
