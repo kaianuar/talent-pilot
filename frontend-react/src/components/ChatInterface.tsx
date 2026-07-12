@@ -34,13 +34,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   candidateId,
   onCandidateCreated,
 }) => {
-  const [messages, setMessages] = useState<Message[]>([
+  const chatHistory = useAppStore((s) => s.chatHistory);
+  const addStoreMessage = useAppStore((s) => s.addMessage);
+  const clearChatHistory = useAppStore((s) => s.clearChat);
+
+  const defaultMessages: Message[] = [
     {
       role: 'assistant',
       content: "Hello! I'm TalentPilot, your AI recruiting assistant. Upload your CV (PDF) and I'll help you find matching job opportunities!",
       timestamp: new Date(),
     },
-  ]);
+  ];
+
+  // Restore from persisted store, or use default greeting
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (chatHistory.length > 0) {
+      return chatHistory.map((m) => ({
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+      }));
+    }
+    return defaultMessages;
+  });
   const [input, setInput] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -62,6 +78,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Sync messages to persisted store (survives component unmount)
+  useEffect(() => {
+    clearChatHistory();
+    for (const m of messages) {
+      addStoreMessage(m.role, m.content);
+    }
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async () => {
     if (!input.trim()) return;

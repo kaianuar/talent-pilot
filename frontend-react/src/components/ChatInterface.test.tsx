@@ -38,6 +38,10 @@ const mockStore: Record<string, unknown> = {
   selectedJobId: null,
   selectedJobTitle: null,
   matches: [],
+  chatHistory: [],
+  addMessage: vi.fn(),
+  clearChat: vi.fn(),
+  setCandidate: vi.fn(),
 };
 
 vi.mock('../store', () => ({

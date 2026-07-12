@@ -189,10 +189,11 @@ class TestScreeningFlowRegressions:
                 screening_id=screening_id,
                 candidate_id="test-candidate",
                 question_id=current_question_id,
-                    f"Specifically, at Acme Corp I built a real-time notification service "
-                    f"using Python, FastAPI, and Redis Streams. It handled 10K requests/sec "
-                    f"across 3 availability zones. I led a team of 4 engineers and we "
-                    f"delivered the project in 8 weeks, reducing p99 latency to 150ms."
+                answer_text=(
+                    "Specifically, at Acme Corp I built a real-time notification service "
+                    "using Python, FastAPI, and Redis Streams. It handled 10K requests/sec "
+                    "across 3 availability zones. I led a team of 4 engineers and we "
+                    "delivered the project in 8 weeks, reducing p99 latency to 150ms."
                 ),
             )
             try:
