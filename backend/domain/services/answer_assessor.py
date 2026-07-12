@@ -185,6 +185,19 @@ Evaluate on:
    question IS relevant — Laravel handles authentication.
 4. Evidence: Did they include the expected elements?
 
+DECISION RULES (follow these strictly):
+- "proceed_to_next": The answer is strong or adequate. Move to a DIFFERENT
+  topic. Do NOT probe deeper on an answer that already has specific examples,
+  named technologies, and clear explanations. If the candidate gave a
+  concrete example with technical details, PROCEED — do not ask for even
+  more detail on the same topic.
+- "probe_for_clarity": ONLY if the answer is genuinely vague, generic, or
+  lacks any specific examples. The candidate said "I have experience" without
+  naming any project, technology, or outcome. Do NOT probe answers that
+  already contain specific examples.
+- "skip_to_email": Answer is exceptionally strong with deep technical detail.
+- "reject_candidate": Answer shows fundamental lack of relevant knowledge.
+
 Return as JSON:
 {{
   "quality": "strong|adequate|vague|irrelevant|contradictory",

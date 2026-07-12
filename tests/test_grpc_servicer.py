@@ -189,11 +189,10 @@ class TestScreeningFlowRegressions:
                 screening_id=screening_id,
                 candidate_id="test-candidate",
                 question_id=current_question_id,
-                answer_text=(
-                    f"I have extensive experience with this technology. "
-                    f"I've worked on production systems for over 5 years, led teams of 4 engineers, "
-                    f"and delivered multiple projects on time. I specifically used Python and React "
-                    f"to build scalable microservices that handled 10K requests per second."
+                    f"Specifically, at Acme Corp I built a real-time notification service "
+                    f"using Python, FastAPI, and Redis Streams. It handled 10K requests/sec "
+                    f"across 3 availability zones. I led a team of 4 engineers and we "
+                    f"delivered the project in 8 weeks, reducing p99 latency to 150ms."
                 ),
             )
             try:
@@ -267,9 +266,10 @@ class TestScreeningFlowRegressions:
                 candidate_id="test-candidate",
                 question_id=current_question_id,
                 answer_text=(
-                    "I have extensive experience with all required technologies and have led "
-                    "multiple production deployments across distributed systems. My team of "
-                    "5 engineers delivered the project on time with 99.9% uptime."
+                    "Specifically, at my previous company Acme Corp I led the migration "
+                    "from a monolithic Django app to FastAPI microservices. We used Redis "
+                    "for caching, PostgreSQL for persistence, and deployed on AWS ECS. "
+                    "The project took 4 months and reduced p99 latency from 800ms to 120ms."
                 ),
             )
             try:

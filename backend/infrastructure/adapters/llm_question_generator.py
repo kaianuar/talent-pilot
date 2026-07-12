@@ -77,19 +77,20 @@ class LLMQuestionGenerator(QuestionGenerator):
     ) -> Question:
         """Generate a probing question for vague answers."""
         
-        prompt = f"""The candidate gave a vague answer to this question:
+        prompt = f"""The candidate's answer could use more specifics on this question:
 
 Original Question: {original_question.text}
+Focus Area: {original_question.focus_area}
+Expected Evidence: {', '.join(original_question.expected_evidence)}
 
-Candidate's Vague Answer: {vague_answer}
+Candidate's Answer: {vague_answer}
 
-Generate a follow-up question that probes for SPECIFIC evidence:
-- Ask for a concrete example or project
-- Ask about scale, complexity, or metrics
-- Ask about duration and their specific role
+Generate ONE short follow-up question that gently asks for a specific
+example or detail. Keep it conversational and encouraging — not
+interrogating. The question should be answerable in 1-2 sentences.
 
 Return as JSON:
-{{"text": "your probing question here", "type": "gap_probe", "focus_area": "{original_question.focus_area}"}}"""
+{{"text": "your follow-up question here", "type": "gap_probe", "focus_area": "{original_question.focus_area}"}}"""
 
         response = self.client.chat.completions.create(
             model=self.model,
