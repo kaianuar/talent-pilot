@@ -76,6 +76,21 @@ describe('useAppStore', () => {
     });
   });
 
+  describe('persistence', () => {
+    it('does not persist chatHistory', () => {
+      useAppStore.getState().setCandidateId('c1');
+      useAppStore.getState().addMessage('user', 'should not survive refresh');
+
+      const raw = localStorage.getItem('talentpilot-storage');
+      expect(raw).not.toBeNull();
+      const parsed = JSON.parse(raw!);
+      expect(parsed.state).toBeDefined();
+      expect(parsed.state.chatHistory).toBeUndefined();
+      expect(parsed.state.candidateId).toBe('c1');
+      expect(parsed.state.isDarkMode).toBe(false);
+    });
+  });
+
   describe('reset', () => {
     it('clears all state back to initial', () => {
       const store = useAppStore.getState();

@@ -89,7 +89,6 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         candidateId: state.candidateId,
         isDarkMode: state.isDarkMode,
-        chatHistory: state.chatHistory,
       }),
     }
   )
