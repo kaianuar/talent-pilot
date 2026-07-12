@@ -327,7 +327,7 @@ describe('ScreeningPanel', () => {
     expect(screen.getByText(/Strong candidate for the role/i)).toBeInTheDocument();
   });
 
-  it('shows Send to Recruiter and Close buttons on completion', async () => {
+  it('shows Send to Recruiter and Apply for a Different Position buttons on completion', async () => {
     mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
 
     renderWithProviders(<ScreeningPanel {...defaultProps} />);
@@ -343,7 +343,48 @@ describe('ScreeningPanel', () => {
     });
 
     expect(screen.getByRole('button', { name: /Send to Recruiter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Close/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Apply for a Different Position/i })).toBeInTheDocument();
+  });
+
+  it('does NOT auto-fire onComplete when screening finishes (regression)', async () => {
+    mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'Answer');
+
+    await waitFor(() => {
+      expect(screen.getByText('Screening Complete')).toBeInTheDocument();
+    });
+
+    // Result screen must be visible AND onComplete must not have been called yet.
+    // Auto-firing onComplete here would unmount the panel before the user reads the result.
+    expect(defaultProps.onComplete).not.toHaveBeenCalled();
+    expect(screen.getByText('Email Draft')).toBeInTheDocument();
+  });
+
+  it('calls onCancel when Apply for a Different Position is clicked', async () => {
+    mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'Answer');
+
+    await waitFor(() => {
+      expect(screen.getByText('Screening Complete')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Apply for a Different Position/i }));
+
+    expect(defaultProps.onCancel).toHaveBeenCalled();
   });
 
   it('calls onComplete when Send to Recruiter is clicked', async () => {

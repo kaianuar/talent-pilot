@@ -119,10 +119,12 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
       setAnswer('');
 
       if (result.isComplete && result.emailDraft) {
-        // Screening complete — fetch final result
+        // Screening complete — fetch final result and show the result screen.
+        // Do NOT auto-fire onComplete here: that would unmount this panel before
+        // the candidate has a chance to read the result. The "Send to Recruiter"
+        // button on the result screen is the explicit opt-in.
         const finalResult = await getScreeningResult(screeningId, candidateId);
         setState({ phase: 'complete', screeningId, result: finalResult });
-        onComplete?.(finalResult);
       } else if (result.nextQuestion) {
         // Show assessment feedback briefly before next question
         if (result.assessment) {
@@ -157,7 +159,7 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
     } catch (err) {
       setState({ phase: 'error', message: err instanceof Error ? err.message : 'Failed to submit answer' });
     }
-  }, [state, answer, candidateId, onComplete]);
+  }, [state, answer, candidateId]);
 
   // --- Render by phase ---
 
@@ -222,14 +224,18 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
           </Paper>
         )}
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           {!isRejected && (
             <Button variant="contained" color="success" onClick={() => onComplete?.(result)}>
               Send to Recruiter
             </Button>
           )}
-          <Button variant="outlined" onClick={onCancel}>
-            {isRejected ? 'Back to Chat' : 'Close'}
+          <Button
+            variant="outlined"
+            onClick={onCancel}
+            aria-label={isRejected ? 'Back to chat' : 'Apply for a different position'}
+          >
+            {isRejected ? 'Back to Chat' : 'Apply for a Different Position'}
           </Button>
         </Box>
       </Paper>
