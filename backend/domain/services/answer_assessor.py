@@ -179,10 +179,18 @@ Evaluate on:
 1. Specificity: Did they give concrete examples or stay generic?
 2. Depth: Did they demonstrate real understanding or surface knowledge?
 3. Relevance: Did they actually answer the question asked?
-   IMPORTANT: The answer is relevant if it addresses the QUESTION'S TOPIC.
-   Do NOT assume the question is about a specific technology unless the
-   question explicitly names it. A Laravel answer to an authentication
-   question IS relevant — Laravel handles authentication.
+   CRITICAL RULES — follow strictly:
+   a) Evaluate relevance ONLY against what the question EXPLICITLY asks.
+      Do NOT infer a narrower topic than what was stated.
+   b) "Web application" is a BROAD term that includes backend, database,
+      infrastructure, APIs, caching, and deployment — NOT just frontend.
+      A database debugging answer to a "web application" question IS relevant.
+   c) "Performance bottleneck" can be N+1 queries, slow DB, memory leaks,
+      unoptimized rendering, bundle size, or network latency. ALL are valid.
+   d) Only mark "irrelevant" if the answer is about a completely different
+      domain (e.g., answering a React question with a gardening story).
+   e) NEVER assume the question is about a specific technology unless the
+      question explicitly names it.
 4. Evidence: Did they include the expected elements?
 
 DECISION RULES (follow these strictly):
