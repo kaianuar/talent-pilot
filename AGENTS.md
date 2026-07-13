@@ -24,7 +24,7 @@ This project uses **MUI v9** — the API differs from MUI v5/v6 in training data
 - Mutations use `mutateAsync` — callers are `async/await`, not callbacks.
 
 ## State management
-- **Zustand** (`src/store/index.ts`) for client state (candidateId, chat history, cache).
+- **Zustand** (`src/store/index.ts`) for client state (candidateId, theme). Chat history is kept in component state — it is NOT persisted across refreshes (a one-shot welcome message would otherwise replay on every page load).
 - **TanStack React Query** for server state (candidates, jobs, matches, audit log).
 - Never duplicate server state into Zustand — use React Query cache.
 
@@ -48,19 +48,23 @@ The backend follows a **ports-and-adapters** pattern:
 
 ## API endpoints (REST — implemented in `backend/app.py`)
 - `GET  /status` — service config status (api_key_configured, smtp_configured, version)
-- `POST /upload` — upload CV PDF (multipart/form-data), returns candidate_id + parsed data
+- `POST /upload` — upload CV PDF (multipart/form-data), returns candidate_id + parsed data. Backfills the Candidate row with parsed name/email/phone so the frontend profile card shows the real values, not placeholders.
+- `POST /chat` — stateless agent chat; `send_confirmed` flag is included in the system prompt context when true.
+- `POST /match` — score candidate against all jobs, returns matches sorted by score.
+- `GET  /candidates/{candidate_id}` — candidate row merged with parsed-resume data (name, email, phone, skills, experience, education, years_experience).
 - `GET  /jobs` — list all jobs
 - `GET  /jobs/{job_id}` — get single job
 - `POST /applications` — submit application; **email only sends if `send_confirmed=true`**
 - `GET  /audit-log` — audit trail (query: limit, candidate_id)
 - `POST /admin/reseed` — re-seed jobs from JSON
 
-⚠️ **Frontend-backend mismatch**: The React frontend calls `POST /chat`, `POST /match`, and `GET /candidates/{id}` but these endpoints do NOT exist in `app.py`. The `/chat` endpoint was replaced by gRPC (`backend/infrastructure/grpc/`). Before the app works end-to-end, either add REST wrappers for these or update the frontend to use gRPC-Web.
+## gRPC service
+Screening interviews are served via gRPC on port 50051 (`backend/infrastructure/grpc/`), proxied to the browser via gRPC-Web. The React client uses `src/api/grpcClient.ts` (generated from `screening.proto`). The frontend never talks to gRPC directly — it always goes through the web proxy in the FastAPI process.
 
 ## Human-in-the-loop guarantee
 The email send is gated at **two levels**:
-1. **API**: `/applications` returns `{"status": "draft_saved"}` when `send_confirmed=False` — email is never sent.
-2. **Frontend**: UI previews the draft; the "Send" button explicitly sets `send_confirmed=True`.
+1. **API**: `/applications` returns `403` (with an `application_rejected_no_confirmation` audit entry) when `send_confirmed=False`. The email is never sent and no application record is created.
+2. **Frontend**: UI previews the draft; the "Send to Recruiter" button on the screening result screen explicitly sets `send_confirmed=True`.
 
 Never bypass either gate. Never infer `send_confirmed` from context.
 
@@ -72,11 +76,13 @@ Never bypass either gate. Never infer `send_confirmed` from context.
 - All models have a `to_dict()` method for JSON serialization.
 
 ## AI models
-- **Resume parsing**: `qwen3-vl-plus` (vision model)
-- **Matching reasoning**: `qwen3-max`
-- **Screening questions**: `qwen3-max`
-- **Email drafting**: `qwen3-max`
-- Base URL: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
+Three model slots, each with a different job:
+- **Resume parsing — text path**: `MODEL_CHAT` (default `qwen-turbo`). Used for PDFs with embedded text. qwen-turbo is reliable at strict JSON-schema output; reasoning models tend to return `null` for fields they can't infer, which breaks validation.
+- **Resume parsing — vision path**: `MODEL_VISION` (default `qwen3-vl-plus`). Fallback for scanned/image-only PDFs (no embedded text). Renders pages to PNG and sends images.
+- **Matching reasoning**: `MODEL_REASONING` (default `qwen3-max`). Scores candidate-job fit. The reasoning model is the right tool here because the score requires weighing multiple signals.
+- **Screening questions**: `MODEL_REASONING` (default `qwen3-max`). Generates the next question targeting the candidate's gaps.
+- **Email drafting**: `MODEL_REASONING` (default `qwen3-max`). Drafts the recruiter email from the screening transcript.
+Base URL: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
 
 ## Email
 - **Alibaba DirectMail SMTP** — configured via `ALIYUN_SMTP_USER`, `ALIYUN_SMTP_PASS`, `SMTP_SENDER`.
@@ -88,20 +94,18 @@ Never bypass either gate. Never infer `send_confirmed` from context.
 # Environment & Config
 
 Copy `.env.example` to `.env` and configure:
-
-| Variable | Required | Default | Notes |
-|---|---|---|---|
 | `QWEN_API_KEY` | Yes | — | Qwen Cloud API key |
 | `QWEN_BASE_URL` | No | dashscope-intl.aliyuncs.com | |
-| `MODEL_REASONING` | No | `qwen3-max` | For matching + screening |
-| `MODEL_VISION` | No | `qwen3-vl-plus` | For CV parsing |
-| `ALIYUN_SMTP_USER` | For email | — | DirectMail SMTP |
-| `ALIYUN_SMTP_PASS` | For email | — | DirectMail password |
-| `SMTP_SENDER` | For email | — | Sender address |
+| `MODEL_REASONING` | No | `qwen3-max` | For matching, screening questions, and email drafting |
+| `MODEL_VISION` | No | `qwen3-vl-plus` | For vision (scanned-PDF) CV parsing fallback |
+| `MODEL_CHAT` | No | `qwen-turbo` | For text-extractable CV parsing (primary path) |
+| `ALIYUN_SMTP_USER` | For email | — | DirectMail SMTP username |
+| `ALIYUN_SMTP_PASS` | For email | — | DirectMail SMTP password |
+| `SMTP_SENDER` | For email | — | Sender email address |
 | `API_HOST` | No | `0.0.0.0` | |
 | `API_PORT` | No | `9000` | |
+| `VITE_API_URL` | No | `http://localhost:9000` | Frontend env var only (Vite build) |
 
-The **frontend** uses `VITE_API_URL` (default `http://localhost:9000`).
 <!-- END:environment-config -->
 
 <!-- BEGIN:deployment-conventions -->

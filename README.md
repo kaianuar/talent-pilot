@@ -25,28 +25,19 @@ TalentPilot is an AI-powered recruiting assistant that automates the end-to-end 
        │  ┌────────┐ ┌──────────┐ ┌──────────┐
        │  │ Resume │ │ Matching │ │  Email   │
        │  │ Parser │ │  Engine  │ │  Service │
-       │  │(Qwen-VL)│ │(Qwen-Max)│ │(DirectMail)│
+       │  │(Qwen-  │ │(Qwen-Max)│ │(Direct   │
+       │  │VL+Turbo│ │          │ │ Mail)    │
        │  └────────┘ └──────────┘ └──────────┘
-       │                   │
-       ▼                   │
-┌──────────────┐           │
-│ gRPC Server  │           │
-│  (50051)     │           │
-│ Screening    │◀──────────┘
-│ Service      │
-│ (LangGraph)  │
-└──────────────┘
-```
 
 ## ✨ Features
 
-- **CV Parsing**: Upload a PDF resume → structured data extraction via Qwen3-VL-Plus vision model
-- **Smart Matching**: Composite scoring with required skills (35%), adjacent skills (20%), experience (20%), and LLM reasoning (25%)
+- **CV Parsing**: Upload a PDF resume → structured data extraction. Text-extractable PDFs go through `qwen-turbo` (JSON-schema-tuned); scanned/image-only PDFs fall back to `qwen3-vl-plus` (vision model that renders pages to PNG).
+- **Smart Matching**: Composite scoring with required skills (35%), adjacent skills (20%), experience (20%), and LLM reasoning (25%) via `qwen3-max`.
 - **gRPC Screening Interview**: Multi-turn AI interview via gRPC + LangGraph — asks targeted questions, assesses answers in real-time, drafts recruiter email on completion
 
 - **Screening Questions**: AI-generated questions targeting skill gaps specific to each candidate-job pair
 - **Real-time WebSocket Progress**: Live progress updates during the screening interview
-- **Email Drafting**: Professional recruiter email drafted by qwen3-max, previewed before sending
+- **Email Drafting**: Professional recruiter email drafted by `qwen3-max`, previewed before sending
 
 ## 🚀 Quick Start
 
@@ -87,47 +78,70 @@ qwen-hackathon/
 │   │   ├── candidate.py        # Candidate + ParsedResume
 │   │   ├── application.py      # Application tracking
 │   │   └── audit_log.py        # Audit trail
-│   ├── services/               # Business logic
-│   │   ├── resume_parser.py    # Qwen3-VL-Plus CV parsing
+│   ├── domain/                 # Ports-and-adapters: core domain
+│   │   ├── entities/           # ScreeningSession
+│   │   ├── value_objects/      # Question, Assessment
+│   │   └── services/           # AnswerAssessor (port interface)
+│   ├── application/            # Use cases + port interfaces
+│   │   ├── use_cases/          # conduct_screening
+│   │   ├── ports/              # QuestionGenerator
+│   │   └── services/           # screening_orchestrator
+│   ├── infrastructure/         # Adapters + transport
+│   │   ├── adapters/           # LLM-backed implementations of ports
+│   │   ├── grpc/               # gRPC server, servicer, web proxy
+│   │   ├── orchestration/      # LangGraph screening graph
+│   │   └── websocket/          # WebSocket progress manager + routes
+│   ├── services/               # Cross-cutting business logic
+│   │   ├── resume_parser.py    # PDF parsing (qwen-turbo text + qwen-vl-plus vision)
 │   │   ├── email.py            # Alibaba DirectMail SMTP
-│   │   └── __init__.py         # CRUD operations
-│   └── agent/                  # AI agent layer
-│       ├── aliases.py          # Skill normalization + adjacency graph
-│       ├── matching.py         # Composite match scoring
-│       ├── prompts.py          # System prompts
-│       ├── tools.py            # 6 MCP-style tools
-│       └── orchestrator.py     # Agent loop with tool calling
+│   │   └── __init__.py         # CRUD: create_candidate, get_candidate, update_candidate, etc.
+│   └── requirements.txt
 ├── frontend-react/
 │   ├── src/
-│   │   ├── components/         # React UI components
-│   │   ├── hooks/              # Custom React hooks
-│   │   ├── store/              # State management
-│   │   ├── api/                # API client layer
+│   │   ├── components/         # React UI (ChatInterface, ScreeningPanel, JobMatches, CandidateProfile)
+│   │   ├── api/                # API client + gRPC client + React Query hooks
+│   │   ├── store/              # Zustand client state
+│   │   ├── generated/          # Auto-generated protobuf-ts types
+│   │   ├── test/               # Test utilities
 │   │   ├── App.tsx             # Root component
 │   │   └── main.tsx            # Entry point
-│   ├── public/                 # Static assets
-│   ├── index.html              # HTML template
-│   ├── vite.config.ts          # Vite configuration
-│   └── package.json            # Node dependencies
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
 ├── data/
 │   ├── seed_jobs.json          # 32 realistic job listings
-│   └── test_resumes/           # Sample CVs for testing
+│   ├── test_resumes/           # Sample CVs for parser testing
+│   ├── recruiter.db            # SQLite (gitignored, created at runtime)
+│   └── uploads/                # Uploaded CV PDFs (gitignored, created at runtime)
 ├── deploy/
-│   ├── Dockerfile              # Single-container deployment
+│   ├── Dockerfile              # Multi-stage (node build + python runtime)
 │   ├── nginx.conf              # Reverse proxy config
 │   ├── start.sh                # Container startup script
 │   └── deploy.sh               # Alibaba Cloud deployment script
-├── tests/
-│   ├── test_jobs_crud.py       # Phase 1: Data layer tests
-│   ├── test_resume_parser.py   # Phase 2: CV parsing tests
-│   ├── test_matching.py        # Phase 3: Matching engine tests
-│   └── test_agent_flow.py      # Phase 4: Agent orchestration tests
+├── tests/                      # Pytest suite (10 files)
+│   ├── test_jobs_crud.py       # Data layer
+│   ├── test_resume_parser.py   # CV parsing (needs QWEN_API_KEY)
+│   ├── test_matching.py        # Matching engine (no LLM needed)
+│   ├── test_rest_endpoints.py  # FastAPI integration tests
+│   ├── test_answer_assessor.py # LLM answer assessment
+│   ├── test_email_service.py   # DirectMail SMTP
+│   ├── test_grpc_servicer.py   # gRPC screening service
+│   ├── test_grpc_web_proxy.py  # gRPC-Web proxy
+│   ├── test_websocket_routes.py# WebSocket progress
+│   └── test_server_startup.py  # App + config import smoke tests
 ├── docs/
-│   └── architecture.mmd        # Mermaid architecture diagram
+│   ├── architecture.mmd        # Mermaid architecture diagram
+│   ├── ARCHITECTURE.md         # Architecture narrative
+│   ├── ARCHITECTURE_COMPLIANCE_REPORT.md
+│   ├── REVIEW_BRIEF.md
+│   ├── REVIEW_REPORT.md
+│   └── UI_UX_REVIEW_REPORT.md
+├── specs/                      # Project specifications
+├── AGENTS.md                   # Project conventions for AI agents
+├── CLAUDE.md                   # Pointer to AGENTS.md
 ├── LICENSE                     # MIT License
 └── README.md                   # This file
 ```
-
 ## 🧠 Matching Algorithm
 
 The composite match score combines four signals:
@@ -150,37 +164,41 @@ Score = 0.35 × required_coverage
 
 ## 🔒 Human-in-the-Loop
 
-The email sending is guarded at two levels:
+The email send is guarded at two levels — the candidate must explicitly opt in before any recruiter contact happens:
 
-1. **Agent prompt**: "Never call send_email_tool unless the user has explicitly clicked 'Send'"
-2. **API enforcement**: `/applications` endpoint returns 403 if `send_confirmed=False`
-3. **Orchestrator code**: `_execute_tool()` blocks `send_email_tool` when `send_confirmed=False`
+1. **API enforcement**: `POST /applications` returns `403` and writes an `application_rejected_no_confirmation` audit entry when `send_confirmed=False`. The email is never sent and no application record is created.
+2. **Frontend gating**: The screening result screen shows the email draft and waits. The candidate must click **"Send to Recruiter"** on the result screen, which sets `send_confirmed=True` before submission. Until then, the only path off the result screen is **"Apply for a Different Position"** (or "Back to Chat" for rejected candidates), which both clear the selection without sending.
+
+Never bypass either gate. Never infer `send_confirmed` from context — the explicit click is the contract.
 
 ## 🧪 Testing
 
 ```bash
-# Run all tests
+# Run the full suite
 pytest tests/ -v
 
-# Run specific phases
-pytest tests/test_jobs_crud.py -v          # Phase 1
-pytest tests/test_matching.py -v           # Phase 3 (no LLM needed)
-pytest tests/test_resume_parser.py -v      # Phase 2 (needs QWEN_API_KEY)
-pytest tests/test_agent_flow.py -v         # Phase 4 (mocked LLM)
+# A few targeted runs
+pytest tests/test_jobs_crud.py -v          # Data layer (no LLM)
+pytest tests/test_matching.py -v           # Matching engine (no LLM)
+pytest tests/test_rest_endpoints.py -v     # FastAPI integration (uses tmp DB)
+pytest tests/test_resume_parser.py -v      # CV parsing (needs QWEN_API_KEY)
+pytest tests/test_grpc_servicer.py -v      # gRPC screening service
+pytest tests/test_websocket_routes.py -v   # WebSocket progress
 ```
 
 ## 🌐 Tech Stack
 
 | Component | Technology | Qwen Model |
 |-----------|------------|------------|
-| CV Parsing | Qwen3-VL-Plus | Vision + OCR |
+| CV Parsing (text path) | qwen-turbo | JSON-schema extraction |
+| CV Parsing (vision path, scanned PDFs) | qwen3-vl-plus | Vision + OCR |
 | Matching Reasoning | qwen3-max | Chat + Reasoning |
 | Screening Questions | qwen3-max | Chat + Reasoning |
 | Email Drafting | qwen3-max | Chat + Reasoning |
 | Backend | FastAPI + SQLAlchemy + LangGraph | — |
-| Frontend | React + TypeScript + Vite + Material UI | — |
+| Frontend | React 19 + TypeScript + Vite + Material UI v9 | — |
 | gRPC / WebSocket | gRPC-Web proxy + WebSocket progress | — |
-| Deployment | Alibaba Cloud FC | — |
+| Deployment | Docker (multi-stage) → Alibaba Cloud FC | — |
 
 ## 📋 Submission Checklist
 
