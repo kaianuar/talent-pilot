@@ -23,6 +23,7 @@ from backend.services import (
     get_job,
     get_candidate,
     create_candidate,
+    update_candidate,
     save_parsed_resume,
     get_parsed_resume,
     create_application,
@@ -198,19 +199,31 @@ async def upload_cv(file: UploadFile = File(...)):
     with open(pdf_path, "wb") as f:
         content = await file.read()
         f.write(content)
-    
+
     try:
         parsed = parse_resume_from_file(str(pdf_path))
         save_parsed_resume(candidate["id"], parsed)
+        # Backfill the candidate row with the real name/email/phone from the
+        # parsed resume. The Candidate row was created above with a filename
+        # placeholder name and a "pending@upload.local" placeholder email so
+        # we have an ID to return before the PDF is parsed. The frontend
+        # profile card reads from this row, so the placeholder would otherwise
+        # leak into the UI.
+        update_candidate(
+            candidate["id"],
+            name=parsed.get("name") or file.filename,
+            email=parsed.get("email") or "pending@upload.local",
+            phone=parsed.get("phone") or "",
+        )
     except ResumeParseError as e:
         raise HTTPException(400, f"Failed to parse resume: {e}")
-    
+
     log_audit(
         action="resume_uploaded",
         candidate_id=candidate["id"],
         details={"filename": file.filename, "skills_count": len(parsed.get("skills", []))},
     )
-    
+
     return UploadResponse(candidate_id=candidate["id"], parsed=parsed, pdf_path=str(pdf_path))
 
 

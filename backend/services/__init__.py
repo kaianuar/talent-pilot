@@ -33,6 +33,27 @@ def get_candidate(candidate_id: str) -> dict | None:
         return c.to_dict() if c else None
 
 
+def update_candidate(candidate_id: str, name: str | None = None, email: str | None = None, phone: str | None = None) -> dict | None:
+    """Update mutable fields on a candidate row. Returns the updated row, or None if missing.
+
+    Used by the upload endpoint to backfill name/email/phone from the parsed
+    resume onto the Candidate row that was created with a placeholder before
+    the PDF was parsed.
+    """
+    with get_session() as session:
+        c = session.query(Candidate).filter(Candidate.id == candidate_id).first()
+        if not c:
+            return None
+        if name is not None and name != "":
+            c.name = name
+        if email is not None and email != "":
+            c.email = email
+        if phone is not None:
+            c.phone = phone
+        session.flush()
+        return c.to_dict()
+
+
 def create_candidate(name: str, email: str, phone: str = "", resume_url: str = "") -> dict:
     """Create a candidate and return as dict."""
     cid = str(uuid.uuid4())

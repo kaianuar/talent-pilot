@@ -109,6 +109,30 @@ def test_upload_parse_failure(mock_parse, client):
     assert "parse" in resp.json()["detail"].lower()
 
 
+@patch("backend.app.parse_resume_from_file", return_value=SAMPLE_PARSED_RESUME)
+def test_upload_backfills_candidate_with_parsed_name_and_email(mock_parse, client):
+    """Regression: after upload, GET /candidates/{id} must return the parsed
+    name and email, not the placeholder filename / 'pending@upload.local'.
+    The Candidate row is created with placeholders before parsing; without
+    an explicit backfill step, the frontend profile card would show the
+    placeholder.
+    """
+    resp = client.post("/upload", files=[_make_pdf_upload("alice-resume.pdf")])
+    assert resp.status_code == 200
+    candidate_id = resp.json()["candidate_id"]
+
+    detail = client.get(f"/candidates/{candidate_id}")
+    assert detail.status_code == 200
+    body = detail.json()
+
+    assert body["name"] == "Alice Example", f"expected parsed name, got {body['name']!r}"
+    assert body["email"] == "alice@example.com", f"expected parsed email, got {body['email']!r}"
+    assert body["phone"] == "+1-555-0100"
+    # The filename placeholder should not have leaked into the row.
+    assert "alice-resume.pdf" not in (body["name"] or "")
+    assert body["email"] != "pending@upload.local"
+
+
 # ============================================================================
 # POST /chat
 # ============================================================================
