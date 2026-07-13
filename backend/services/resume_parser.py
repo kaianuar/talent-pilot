@@ -16,7 +16,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 from openai import OpenAI
 
-from backend.config import QWEN_API_KEY, QWEN_BASE_URL, MODEL_VISION, MODEL_REASONING
+from backend.config import QWEN_API_KEY, QWEN_BASE_URL, MODEL_VISION, MODEL_REASONING, MODEL_CHAT
 from backend.models.candidate import ParsedResumeModel
 
 logger = logging.getLogger(__name__)
@@ -160,9 +160,16 @@ def _pdf_to_images(pdf_bytes: bytes) -> list[str]:
     doc.close()
     return images
 
-
 def _parse_with_text_model(text_content: str) -> dict:
-    """Parse resume using the text-based reasoning model (qwen3-max)."""
+    """Parse resume using the chat model (qwen-turbo).
+
+    Uses MODEL_CHAT rather than MODEL_REASONING because structured JSON
+    extraction is an instruction-following task, not a reasoning task. The
+    reasoning models (qwen3.7-max-preview, qwen3.7-max-2026-06-08) have
+    been observed returning null for years on implicit skills (e.g.
+    "Microservices", "REST APIs"), which fails the ParsedResumeModel
+    validator. qwen-turbo returns clean integers and is also ~3x faster.
+    """
     client = OpenAI(base_url=QWEN_BASE_URL, api_key=QWEN_API_KEY)
 
     messages = [
@@ -171,7 +178,7 @@ def _parse_with_text_model(text_content: str) -> dict:
     ]
 
     response = client.chat.completions.create(
-        model=MODEL_REASONING,
+        model=MODEL_CHAT,
         messages=messages,
         temperature=0.1,
         max_tokens=4000,

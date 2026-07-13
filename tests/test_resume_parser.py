@@ -144,6 +144,30 @@ def test_parse_resume_returns_valid_schema(mock_openai_client):
     assert parsed.email
 
 
+def test_text_path_uses_chat_model_not_reasoning_model(mock_openai_client):
+    """Regression guard: the text extraction path must use MODEL_CHAT, not
+    MODEL_REASONING. Reasoning models (qwen3.7-max-preview, qwen3.7-max-2026-06-08)
+    have been observed returning null for years on implicit skills, which fails
+    the ParsedResumeModel validator. qwen-turbo is reliable for this schema.
+    """
+    from backend.config import MODEL_CHAT, MODEL_REASONING
+
+    fake_pdf_bytes = b"%PDF-1.4 fake content for testing"
+
+    with (
+        patch("backend.services.resume_parser.QWEN_API_KEY", "fake-key-for-testing"),
+        patch("backend.services.resume_parser.OpenAI", return_value=mock_openai_client),
+        patch("backend.services.resume_parser._extract_text_from_pdf", return_value="John Doe\njohn@example.com\n" * 50),
+    ):
+        parse_resume(fake_pdf_bytes)
+
+    called_model = mock_openai_client.chat.completions.create.call_args.kwargs["model"]
+    assert called_model == MODEL_CHAT, (
+        f"Text path called model={called_model!r}; expected MODEL_CHAT={MODEL_CHAT!r}. "
+        f"Do not regress to MODEL_REASONING={MODEL_REASONING!r} — it fails this schema."
+    )
+
+
 # --- Tests that need no mocking ---
 
 def test_parse_resume_no_api_key():
