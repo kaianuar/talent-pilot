@@ -491,3 +491,552 @@ class TestProbeBehavior:
             assert decision.value == decision.value.lower(), (
                 f"{decision.name} value '{decision.value}' is not lowercase"
             )
+
+
+class TestServicerInternals:
+    """Direct unit tests for ScreeningServicer internals.
+
+    These bypass the gRPC round-trip and exercise the servicer methods
+    directly with mocked LLM adapters. Goal: cover the internal helpers
+    (_to_proto_*, _create_progress_update) and the error/edge paths
+    (session not found, complete session, no current question) that
+    the gRPC happy-path tests don't naturally hit.
+    """
+
+    def _make_servicer_with_mocks(self, *, initial_questions=None, assess_side_effect=None):
+        """Construct a ScreeningServicer with mocked LLM adapters."""
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        from backend.domain.value_objects.assessment import (
+            AnswerAssessment, AssessmentDecision, AnswerQuality,
+        )
+
+        q1 = Question(
+            id="q1", text="Q1?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x",
+            expected_evidence=["a"],
+        )
+        questions = initial_questions or [q1]
+
+        servicer = ScreeningServicer()
+        servicer._question_generator = MagicMock()
+        servicer._question_generator.generate_initial_questions.return_value = questions
+        servicer._answer_assessor = MagicMock()
+        if assess_side_effect is not None:
+            servicer._answer_assessor.assess.side_effect = assess_side_effect
+        else:
+            assess = AnswerAssessment(
+                quality=AnswerQuality.ADEQUATE, confidence=0.8,
+                key_points_identified=["x"], gaps_identified=[],
+                decision=AssessmentDecision.PROCEED_TO_NEXT_QUESTION,
+                reasoning="ok",
+            )
+            servicer._answer_assessor.assess.return_value = assess
+        return servicer, q1
+
+    # --- _to_proto_assessment (line 81-90) ---
+
+    def test_to_proto_assessment_round_trips_all_fields(self):
+        from backend.domain.value_objects.assessment import (
+            AnswerAssessment, AssessmentDecision, AnswerQuality,
+        )
+        servicer = ScreeningServicer()
+        a = AnswerAssessment(
+            quality=AnswerQuality.STRONG, confidence=0.95,
+            key_points_identified=["k1", "k2"], gaps_identified=["g1"],
+            decision=AssessmentDecision.REJECT_CANDIDATE, reasoning="nope",
+        )
+        proto = servicer._to_proto_assessment(a)
+        assert proto.quality == "strong"
+        # float32 precision in proto: 0.95 -> 0.949999988079071
+        assert abs(proto.confidence - 0.95) < 1e-4
+        assert list(proto.key_points_identified) == ["k1", "k2"]
+        assert list(proto.gaps_identified) == ["g1"]
+        assert proto.decision == "reject_candidate"
+        assert proto.reasoning == "nope"
+
+    # --- _to_proto_email_draft (line 104-112) ---
+
+    def test_to_proto_email_draft_full(self):
+        servicer = ScreeningServicer()
+        proto = servicer._to_proto_email_draft({
+            "to": "a@b.com", "subject": "S", "body": "B", "cc": "c@d", "bcc": "e@f",
+        })
+        assert proto.to == "a@b.com"
+        assert proto.subject == "S"
+        assert proto.body == "B"
+        assert proto.cc == "c@d"
+        assert proto.bcc == "e@f"
+
+    def test_to_proto_email_draft_missing_fields_default_to_empty(self):
+        servicer = ScreeningServicer()
+        proto = servicer._to_proto_email_draft({})
+        assert proto.to == ""
+        assert proto.subject == ""
+        assert proto.body == ""
+        assert proto.cc == ""
+        assert proto.bcc == ""
+
+    # --- _create_progress_update (line 114-139) ---
+
+    def test_create_progress_update_with_current_question(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Active question", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.IN_PROGRESS,
+            question_nodes=[QuestionNode(question=q), QuestionNode(question=q)],
+            current_question_index=1,
+        )
+        update = servicer._create_progress_update(session, "IN_PROGRESS")
+        assert update.screening_id == "s1"
+        assert update.status == "IN_PROGRESS"
+        # 1-indexed for UI: index 1 -> "Question 2 of 2"
+        assert update.current_question_number == 2
+        assert update.total_questions == 2
+        assert abs(update.progress_percentage - 50.0) < 1e-9
+        assert update.current_question_text == "Active question"
+        assert update.timestamp.endswith("Z")
+
+    def test_create_progress_update_empty_session(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus,
+        )
+        servicer = ScreeningServicer()
+        session = ScreeningSession(
+            id="s2", candidate_id="c1", job_id="j1", match_tier="WEAK_MATCH",
+            status=ScreeningStatus.PENDING, question_nodes=[],
+        )
+        update = servicer._create_progress_update(session, "PENDING")
+        assert update.total_questions == 0
+        assert update.progress_percentage == 0
+        assert update.current_question_text == ""
+
+    def test_create_progress_update_when_current_index_past_end(self):
+        """current_question_index == total: no current text, progress 100%."""
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Q1?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s3", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.COMPLETE,
+            question_nodes=[QuestionNode(question=q)],
+            current_question_index=1,  # past the end
+        )
+        update = servicer._create_progress_update(session, "COMPLETE")
+        assert update.total_questions == 1
+        # (1 / max(1, 1)) * 100 = 100%
+        assert update.progress_percentage == 100.0
+        # current_index >= total, so no text
+        assert update.current_question_text == ""
+
+    # --- StartScreening error path (line 189-193) ---
+
+    def test_start_screening_returns_failure_on_exception(self):
+        servicer = ScreeningServicer()
+        servicer._question_generator = MagicMock()
+        servicer._question_generator.generate_initial_questions.side_effect = RuntimeError("boom")
+        ctx = MagicMock()
+        resp = servicer.StartScreening(
+            screening_pb2.StartScreeningRequest(
+                candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH", question_count=1,
+            ),
+            ctx,
+        )
+        assert resp.success is False
+        assert "boom" in resp.error_message
+        ctx.set_code.assert_called_once()
+        ctx.set_details.assert_called_once()
+
+    # --- GetNextQuestion (line 198-247) ---
+
+    def test_get_next_question_session_not_found(self):
+        servicer = ScreeningServicer()
+        ctx = MagicMock()
+        resp = servicer.GetNextQuestion(
+            screening_pb2.GetNextQuestionRequest(screening_id="missing", candidate_id="c1"),
+            ctx,
+        )
+        assert resp.has_more_questions is False
+        assert resp.is_complete is False
+        ctx.set_code.assert_called_once_with(grpc.StatusCode.NOT_FOUND)
+
+    def test_get_next_question_already_complete(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Q1?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.COMPLETE,
+            question_nodes=[QuestionNode(question=q)],
+            current_question_index=1,  # past end
+        )
+        servicer._sessions["s1"] = session
+        ctx = MagicMock()
+        resp = servicer.GetNextQuestion(
+            screening_pb2.GetNextQuestionRequest(screening_id="s1", candidate_id="c1"),
+            ctx,
+        )
+        assert resp.has_more_questions is False
+        assert resp.is_complete is True
+        ctx.set_code.assert_not_called()
+
+    def test_get_next_question_returns_current_with_preliminary_assessment(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority, Answer,
+        )
+        from backend.domain.value_objects.assessment import (
+            AnswerAssessment, AssessmentDecision, AnswerQuality,
+        )
+        from datetime import datetime, timezone
+
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Active?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        assess = AnswerAssessment(
+            quality=AnswerQuality.ADEQUATE, confidence=0.8,
+            key_points_identified=["k"], gaps_identified=[],
+            decision=AssessmentDecision.PROCEED_TO_NEXT_QUESTION, reasoning="ok",
+        )
+        node = QuestionNode(
+            question=q,
+            answer=Answer(question_id="q1", text="my answer", timestamp=datetime.now(timezone.utc).isoformat()),
+            assessment=assess,
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.IN_PROGRESS,
+            question_nodes=[node],
+            current_question_index=0,
+        )
+        servicer._sessions["s1"] = session
+        resp = servicer.GetNextQuestion(
+            screening_pb2.GetNextQuestionRequest(screening_id="s1", candidate_id="c1"),
+            MagicMock(),
+        )
+        assert resp.question.id == "q1"
+        assert resp.has_more_questions is True
+        assert resp.is_complete is False
+        assert resp.preliminary_assessment is not None
+        assert resp.preliminary_assessment.decision == "proceed_to_next"
+
+    def test_get_next_question_exception_path(self):
+        servicer = ScreeningServicer()
+        servicer._sessions = MagicMock()
+        # Force .get to raise
+        servicer._sessions.get.side_effect = RuntimeError("kaboom")
+        ctx = MagicMock()
+        resp = servicer.GetNextQuestion(
+            screening_pb2.GetNextQuestionRequest(screening_id="s1", candidate_id="c1"),
+            ctx,
+        )
+        # Empty default response
+        assert resp.has_more_questions is False
+        assert resp.is_complete is False
+        ctx.set_code.assert_called_once_with(grpc.StatusCode.INTERNAL)
+
+    # --- SubmitAnswer edge cases (line 277-289, 346-350) ---
+
+    def test_submit_answer_on_already_complete_session(self):
+        """Document current behavior for SubmitAnswer on a complete session.
+
+        When a client calls SubmitAnswer on a session that is already past
+        the end of its question list, the servicer enters the
+        'current_idx >= len(question_nodes)' branch and tries to build a
+        final email draft. As written, that branch calls
+        `orchestrator.get_screening_result()` — a method that does NOT
+        exist on ScreeningOrchestrator (the actual getter is on the
+        ConductScreening use case). The call raises AttributeError, the
+        generic exception handler at servicer.py:346 catches it, and the
+        client gets back a default SubmitAnswerResponse with
+        is_complete=False and INTERNAL gRPC status.
+
+        This is a real bug. A future fix should either:
+          - route the get-result call to the right place (use case /
+            orchestrator method), or
+          - detect "session already complete" earlier and short-circuit
+            with a clean SubmitAnswerResponse(is_complete=True,
+            email_draft=...) response.
+
+        This test pins the current wire behavior. When the bug is fixed,
+        update the test: it should assert is_complete=True and a populated
+        email_draft.
+        """
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Q1?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.COMPLETE,
+            question_nodes=[QuestionNode(question=q)],
+            current_question_index=1,  # past end -> already-complete branch
+        )
+        servicer._sessions["s1"] = session
+        ctx = MagicMock()
+        resp = servicer.SubmitAnswer(
+            screening_pb2.SubmitAnswerRequest(
+                screening_id="s1", candidate_id="c1",
+                question_id="q1", answer_text="late answer",
+            ),
+            ctx,
+        )
+        # Current (buggy) wire behavior: empty response, INTERNAL status set.
+        # proto3 returns default-constructed message fields (not None) for
+        # unset sub-messages, so we use 'is not set' via the 'WhichOneof'
+        # pattern: the default SubmitAnswerResponse has no fields populated.
+        assert resp.is_complete is False
+        assert resp.assessment.ByteSize() == 0
+        assert resp.next_question.ByteSize() == 0
+        assert resp.email_draft.ByteSize() == 0
+        ctx.set_code.assert_called_once_with(grpc.StatusCode.INTERNAL)
+
+    def test_submit_answer_session_not_found(self):
+        servicer = ScreeningServicer()
+        ctx = MagicMock()
+        resp = servicer.SubmitAnswer(
+            screening_pb2.SubmitAnswerRequest(
+                screening_id="missing", candidate_id="c1",
+                question_id="q1", answer_text="x",
+            ),
+            ctx,
+        )
+        # Default response; not complete, no assessment, no next question
+        assert resp.is_complete is False
+        ctx.set_code.assert_called_once_with(grpc.StatusCode.NOT_FOUND)
+
+    # --- GetScreeningResult (line 359-406) ---
+
+    def test_get_screening_result_session_not_found(self):
+        servicer = ScreeningServicer()
+        resp = servicer.GetScreeningResult(
+            screening_pb2.GetScreeningResultRequest(screening_id="missing"),
+            MagicMock(),
+        )
+        assert resp.success is False
+        assert "not found" in resp.error_message.lower()
+
+    def test_get_screening_result_includes_qa_history(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority, Answer,
+        )
+        from backend.domain.value_objects.assessment import (
+            AnswerAssessment, AssessmentDecision, AnswerQuality,
+        )
+        from datetime import datetime, timezone
+
+        servicer = ScreeningServicer()
+        q1 = Question(
+            id="q1", text="First?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        assess = AnswerAssessment(
+            quality=AnswerQuality.STRONG, confidence=0.9,
+            key_points_identified=["a"], gaps_identified=[],
+            decision=AssessmentDecision.PROCEED_TO_NEXT_QUESTION, reasoning="ok",
+        )
+        node = QuestionNode(
+            question=q1,
+            answer=Answer(question_id="q1", text="my answer", timestamp=datetime.now(timezone.utc).isoformat()),
+            assessment=assess,
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.IN_PROGRESS,
+            question_nodes=[node],
+        )
+        servicer._sessions["s1"] = session
+        resp = servicer.GetScreeningResult(
+            screening_pb2.GetScreeningResultRequest(screening_id="s1"),
+            MagicMock(),
+        )
+        assert resp.success is True
+        assert resp.summary.screening_id == "s1"
+        assert resp.summary.candidate_id == "c1"
+        assert resp.summary.job_id == "j1"
+        assert resp.summary.status == "in_progress"
+        assert len(resp.qa_history) == 1
+        assert resp.qa_history[0].question.id == "q1"
+        assert resp.qa_history[0].answer_text == "my answer"
+        assert resp.qa_history[0].assessment.quality == "strong"
+
+    # --- StreamScreeningProgress (line 408-442) ---
+
+    def test_stream_screening_progress_session_not_found(self):
+        servicer = ScreeningServicer()
+        ctx = MagicMock()
+        # Consume the generator to trigger the body
+        gen = servicer.StreamScreeningProgress(
+            screening_pb2.StreamScreeningProgressRequest(screening_id="missing"),
+            ctx,
+        )
+        # Generator returns immediately when session is missing (early return)
+        result = list(gen)
+        assert result == []
+        ctx.set_code.assert_called_once_with(grpc.StatusCode.NOT_FOUND)
+
+    def test_stream_screening_progress_yields_initial_update(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Active?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.IN_PROGRESS,
+            question_nodes=[QuestionNode(question=q)],
+            current_question_index=0,
+        )
+        servicer._sessions["s1"] = session
+        gen = servicer.StreamScreeningProgress(
+            screening_pb2.StreamScreeningProgressRequest(screening_id="s1"),
+            MagicMock(),
+        )
+        updates = list(gen)
+        assert len(updates) == 1
+        assert updates[0].screening_id == "s1"
+        assert updates[0].status == "CONNECTED"
+        assert updates[0].current_question_text == "Active?"
+
+    def test_stream_screening_progress_exception_path(self):
+        servicer = ScreeningServicer()
+        servicer._sessions = MagicMock()
+        servicer._sessions.get.side_effect = RuntimeError("netfail")
+        ctx = MagicMock()
+        gen = servicer.StreamScreeningProgress(
+            screening_pb2.StreamScreeningProgressRequest(screening_id="s1"),
+            ctx,
+        )
+        list(gen)  # consume to trigger
+        ctx.set_code.assert_called_once_with(grpc.StatusCode.INTERNAL)
+
+    # --- _notify_progress_observers (line 444-464) ---
+
+    def test_notify_progress_observers_unknown_screening_id_is_noop(self):
+        import asyncio
+        servicer = ScreeningServicer()
+        # No-op: no observers, no session
+        servicer._notify_progress_observers("unknown", "X")
+
+    def test_notify_progress_observers_unknown_session_is_noop(self):
+        import asyncio
+        servicer = ScreeningServicer()
+        q: asyncio.Queue = asyncio.Queue()
+        servicer._progress_observers["s1"] = [q]
+        servicer._notify_progress_observers("s1", "X")
+        # Session missing -> early return, queue stays empty
+        assert q.empty()
+
+    def test_notify_progress_observers_queues_updates_for_all_observers(self):
+        import asyncio
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Q?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.IN_PROGRESS,
+            question_nodes=[QuestionNode(question=q)],
+        )
+        servicer._sessions["s1"] = session
+
+        observer_a: asyncio.Queue = asyncio.Queue()
+        observer_b: asyncio.Queue = asyncio.Queue()
+        servicer._progress_observers["s1"] = [observer_a, observer_b]
+
+        servicer._notify_progress_observers("s1", "PROGRESS")
+        assert not observer_a.empty()
+        assert not observer_b.empty()
+        msg_a = observer_a.get_nowait()
+        assert msg_a.screening_id == "s1"
+        assert msg_a.status == "PROGRESS"
+
+    def test_notify_progress_observers_slow_observer_is_skipped(self):
+        """A full observer queue must not block; the update is silently dropped."""
+        import asyncio
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus, QuestionNode,
+        )
+        from backend.domain.value_objects.question import (
+            Question, QuestionType, QuestionPriority,
+        )
+        servicer = ScreeningServicer()
+        q = Question(
+            id="q1", text="Q?", type=QuestionType.TECHNICAL_DEPTH,
+            priority=QuestionPriority.REQUIRED, focus_area="x", expected_evidence=[],
+        )
+        session = ScreeningSession(
+            id="s1", candidate_id="c1", job_id="j1", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.IN_PROGRESS,
+            question_nodes=[QuestionNode(question=q)],
+        )
+        servicer._sessions["s1"] = session
+
+        # Create a tiny queue and fill it (maxsize=1)
+        slow_observer: asyncio.Queue = asyncio.Queue(maxsize=1)
+        slow_observer.put_nowait("sentinel")  # queue is now full
+        fast_observer: asyncio.Queue = asyncio.Queue()
+        servicer._progress_observers["s1"] = [slow_observer, fast_observer]
+
+        # Should not raise even though slow_observer is full
+        servicer._notify_progress_observers("s1", "PROGRESS")
+
+        # Fast observer got the update
+        assert not fast_observer.empty()
+        # Slow observer still has only the sentinel
+        assert slow_observer.get_nowait() == "sentinel"
+        assert slow_observer.empty()
