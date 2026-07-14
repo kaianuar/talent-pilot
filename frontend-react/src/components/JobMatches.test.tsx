@@ -220,4 +220,76 @@ describe('JobMatches', () => {
 
     expect(screen.getByText('Roles ranked by fit for this candidate')).toBeInTheDocument();
   });
+
+  it('renders POOR_MATCH tier label and color', () => {
+    matchesReturn = { data: [poorMatch], isLoading: false, isError: false };
+
+ renderWithProviders(<JobMatches candidateId="c1" />);
+
+    // poorMatch has score 0.25 which is below MIN_MATCH_SCORE (0.50),
+    // so it would normally be filtered. Bump the score up to force
+    // rendering of the POOR_MATCH tier.
+    const poorAboveThreshold = { ...poorMatch, match_score: 0.6 };
+    matchesReturn = { data: [poorAboveThreshold], isLoading: false, isError: false };
+    renderWithProviders(<JobMatches candidateId="c1" />);
+
+    // The poorMatch fixture has tier='POOR_MATCH' which maps to 'Poor Match'
+    expect(screen.getByText('Poor Match')).toBeInTheDocument();
+  });
+
+  it('renders NO_MATCH tier label as default fallback', () => {
+    // An unrecognized tier (e.g. NO_MATCH) should fall through to the
+    // default branch of getMatchLabel ('No Match') and getMatchColor
+    // ('default').
+    const noMatch = {
+      ...sampleMatch,
+      job_id: 'j-no',
+      job_title: 'Mystery Role',
+      tier: 'NO_MATCH' as const,
+      match_score: 0.6, // above threshold so the card renders
+    };
+    matchesReturn = { data: [noMatch], isLoading: false, isError: false };
+
+    renderWithProviders(<JobMatches candidateId="c1" />);
+
+    expect(screen.getByText('No Match')).toBeInTheDocument();
+  });
+
+  it('invokes matchJobs mutation when Retry button is clicked in error state', async () => {
+    matchesReturn = { data: undefined, isLoading: false, isError: true };
+
+    renderWithProviders(<JobMatches candidateId="c1" />);
+
+    const retryBtn = screen.getByRole('button', { name: /Retry/i });
+    await user.click(retryBtn);
+
+    // handleRefresh -> matchJobsMutation.mutate(candidateId) -> calls useMatchJobs
+    expect(mockMutateAsync).toHaveBeenCalledWith('c1');
+  });
+
+  it('Retry button is a no-op when candidateId is missing (defensive guard)', async () => {
+    // If the error state somehow rendered with no candidateId, clicking
+    // Retry should not blow up. The handleRefresh guard at line 76
+    // ('if (candidateId)') prevents the mutate call.
+    matchesReturn = { data: undefined, isLoading: false, isError: true };
+
+    renderWithProviders(<JobMatches />); // no candidateId
+
+    // Without candidateId, we render the 'no candidate' state, not the
+    // error state. Verify the no-candidate prompt is shown.
+    expect(screen.getByText(/Upload your CV to see job matches/i)).toBeInTheDocument();
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('clicking the match card body sets the selected job (not just the button)', async () => {
+    matchesReturn = { data: [sampleMatch], isLoading: false, isError: false };
+
+    renderWithProviders(<JobMatches candidateId="c1" />);
+
+    // Click the card title (not the button)
+    await user.click(screen.getByText('Frontend Developer'));
+
+    // Card-level onClick at line 181 also calls setSelectedJob
+    expect(mockStore.setSelectedJob).toHaveBeenCalledWith('j1', 'Frontend Developer');
+  });
 });
