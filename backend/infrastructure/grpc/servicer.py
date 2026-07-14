@@ -110,7 +110,21 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             cc=draft.get("cc", ""),
             bcc=draft.get("bcc", ""),
         )
-    
+
+    def _build_email_draft(self, session) -> screening_pb2.EmailDraft:
+        """Build the recruiter email draft from a completed screening session.
+
+        Single source of truth used by both the main SubmitAnswer path
+        and the early-return path for a session that's already complete
+        when SubmitAnswer is called. The body summarises the screening
+        outcome; the frontend renders it verbatim before sending.
+        """
+        return screening_pb2.EmailDraft(
+            to="recruiter@example.com",
+            subject=f"Screening Result for {session.candidate_id}",
+            body=f"Screening completed for {session.candidate_id}. Status: {session.status.value}",
+        )
+
     def _create_progress_update(
         self,
         session: ScreeningSession,
@@ -273,15 +287,15 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
             # Get current question
             current_idx = session.current_question_index
             if current_idx >= len(session.question_nodes):
-                # Session is complete
-                result = orchestrator.get_screening_result()
-                email_draft = self._to_proto_email_draft(result.get('email_draft', {}))
-                
+                # Session is already complete (e.g. a late SubmitAnswer
+                # call after the screening finished). Return the final
+                # state with the email draft — same shape as the main
+                # complete path below.
                 return screening_pb2.SubmitAnswerResponse(
                     is_complete=True,
-                    email_draft=email_draft,
+                    email_draft=self._build_email_draft(session),
                 )
-            
+
             current_node = session.question_nodes[current_idx]
             if not current_node.question:
                 context.set_code(grpc.StatusCode.INTERNAL)
@@ -325,14 +339,7 @@ class ScreeningServicer(screening_pb2_grpc.ScreeningServiceServicer):
                     next_question = self._to_proto_question(session.current_question)
             
             # Get email draft if complete
-            email_draft = None
-            if is_complete:
-                # Build email draft from session data
-                email_draft = screening_pb2.EmailDraft(
-                    to=f"recruiter@example.com",
-                    subject=f"Screening Result for {session.candidate_id}",
-                    body=f"Screening completed for {session.candidate_id}. Status: {session.status.value}",
-                )
+            email_draft = self._build_email_draft(session) if is_complete else None
             
             logger.info(f"SubmitAnswer completed for screening {request.screening_id}, is_complete={is_complete}")
             

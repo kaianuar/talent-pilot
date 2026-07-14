@@ -578,7 +578,23 @@ class TestServicerInternals:
         assert proto.cc == ""
         assert proto.bcc == ""
 
-    # --- _create_progress_update (line 114-139) ---
+    # --- _build_email_draft (line 114-127) ---
+
+    def test_build_email_draft_uses_session_data(self):
+        from backend.domain.entities.screening_session import (
+            ScreeningSession, ScreeningStatus,
+        )
+        servicer = ScreeningServicer()
+        session = ScreeningSession(
+            id="s1", candidate_id="c-42", job_id="j-7", match_tier="STRONG_MATCH",
+            status=ScreeningStatus.COMPLETE,
+        )
+        draft = servicer._build_email_draft(session)
+        assert draft.subject == "Screening Result for c-42"
+        assert "c-42" in draft.body
+        assert "complete" in draft.body
+        # The single source of truth — both SubmitAnswer paths call this.
+        assert draft.to == "recruiter@example.com"
 
     def test_create_progress_update_with_current_question(self):
         from backend.domain.entities.screening_session import (
@@ -769,29 +785,20 @@ class TestServicerInternals:
     # --- SubmitAnswer edge cases (line 277-289, 346-350) ---
 
     def test_submit_answer_on_already_complete_session(self):
-        """Document current behavior for SubmitAnswer on a complete session.
+        """A late SubmitAnswer on a complete session must return
+        is_complete=True with a populated email_draft, not crash.
 
-        When a client calls SubmitAnswer on a session that is already past
-        the end of its question list, the servicer enters the
-        'current_idx >= len(question_nodes)' branch and tries to build a
-        final email draft. As written, that branch calls
-        `orchestrator.get_screening_result()` — a method that does NOT
-        exist on ScreeningOrchestrator (the actual getter is on the
-        ConductScreening use case). The call raises AttributeError, the
-        generic exception handler at servicer.py:346 catches it, and the
-        client gets back a default SubmitAnswerResponse with
-        is_complete=False and INTERNAL gRPC status.
+        Regression: servicer.py:277 used to call
+        `orchestrator.get_screening_result()`, a method that does not
+        exist on ScreeningOrchestrator. The call raised AttributeError,
+        the generic exception handler caught it, and the client got
+        back a default SubmitAnswerResponse with is_complete=False and
+        INTERNAL gRPC status — telling the client the screening was
+        still in progress.
 
-        This is a real bug. A future fix should either:
-          - route the get-result call to the right place (use case /
-            orchestrator method), or
-          - detect "session already complete" earlier and short-circuit
-            with a clean SubmitAnswerResponse(is_complete=True,
-            email_draft=...) response.
-
-        This test pins the current wire behavior. When the bug is fixed,
-        update the test: it should assert is_complete=True and a populated
-        email_draft.
+        Fix: route the email-draft construction through the new
+        _build_email_draft helper, and return is_complete=True with
+        a populated email_draft.
         """
         from backend.domain.entities.screening_session import (
             ScreeningSession, ScreeningStatus, QuestionNode,
@@ -819,15 +826,13 @@ class TestServicerInternals:
             ),
             ctx,
         )
-        # Current (buggy) wire behavior: empty response, INTERNAL status set.
-        # proto3 returns default-constructed message fields (not None) for
-        # unset sub-messages, so we use 'is not set' via the 'WhichOneof'
-        # pattern: the default SubmitAnswerResponse has no fields populated.
-        assert resp.is_complete is False
-        assert resp.assessment.ByteSize() == 0
-        assert resp.next_question.ByteSize() == 0
-        assert resp.email_draft.ByteSize() == 0
-        ctx.set_code.assert_called_once_with(grpc.StatusCode.INTERNAL)
+        # Fixed: is_complete=True with a real email draft.
+        assert resp.is_complete is True
+        assert resp.email_draft is not None
+        assert resp.email_draft.subject == "Screening Result for c1"
+        assert "Status:" in resp.email_draft.body
+        # No gRPC error set on the success path
+        ctx.set_code.assert_not_called()
 
     def test_submit_answer_session_not_found(self):
         servicer = ScreeningServicer()
