@@ -1,6 +1,10 @@
 # 🎯 TalentPilot — AI Recruiter Agent
 
 > **Qwen Cloud Global AI Hackathon — Track 4: Autopilot Agent**
+>
+> **Submission deadline: July 20, 2026, 2:00 PM PDT** (extended from July 9 per Devpost).
+>
+> See the [submission checklist](#-submission-checklist) below for current status.
 
 TalentPilot is an AI-powered recruiting assistant that automates the end-to-end initial candidate screening workflow. Candidates upload their CV through a chat interface, the agent parses it, matches against the company's curated job listings, asks targeted screening questions, and emails the recruiter — all with human-in-the-loop confirmation before sending.
 
@@ -28,6 +32,7 @@ TalentPilot is an AI-powered recruiting assistant that automates the end-to-end 
        │  │(Qwen-  │ │(Qwen-Max)│ │(Direct   │
        │  │VL+Turbo│ │          │ │ Mail)    │
        │  └────────┘ └──────────┘ └──────────┘
+```
 
 ## ✨ Features
 
@@ -202,12 +207,14 @@ pytest tests/test_websocket_routes.py -v   # WebSocket progress
 
 ## 📋 Submission Checklist
 
-- [x] Public GitHub repo with MIT license
-- [x] Code repo with open-source license
+- [ ] **Public GitHub repo** — `LICENSE` (MIT) is committed; the repo still needs to be pushed to a public GitHub URL before submission.
+- [x] Code repo with open-source license (MIT, committed)
 - [x] Architecture diagram (`docs/architecture.mmd`)
-- [ ] Demo video (~3 min, YouTube/Vimeo)
-- [ ] Proof of Alibaba Cloud deployment
-- [ ] Devpost submission form
+- [ ] **Demo video** (~3 min, YouTube/Vimeo, public) — pending recording
+- [ ] **Proof of Alibaba Cloud deployment** — Docker build is in `deploy/`; the deployment itself is pending
+- [ ] **Devpost submission form** — submitted via the Devpost UI once the video and deployment are live
+
+**Hard deadline: 2:00 PM PDT on July 20, 2026.**
 
 ## 📄 License
 
