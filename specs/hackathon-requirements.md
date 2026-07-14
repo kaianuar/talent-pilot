@@ -11,7 +11,10 @@
 - Production-readiness over toy demos
 
 ## Deadline
-**July 9, 2026, 2:00 PM PDT**
+**EXTENDED: July 20, 2026, 2:00 PM PDT** (originally July 9; see [Devpost Updates](https://qwencloud-hackathon.devpost.com/updates) and the official [Qwen Cloud announcement](https://www.qwencloud.com/challenge/hackathon))
+
+## Judging Period
+**July 28 – August 11, 2026** (per Devpost Rules page)
 
 ## Prize Structure
 
