@@ -162,12 +162,156 @@ describe('API client', () => {
       expect(result).toEqual(response);
     });
   });
-
   describe('error handling', () => {
     it('propagates errors from axios', async () => {
       mockGet.mockRejectedValueOnce(new Error('Network Error'));
 
       await expect(getCandidate('c1')).rejects.toThrow('Network Error');
+    });
+  });
+
+  describe('response interceptor', () => {
+    it('passes through successful responses unchanged', async () => {
+      // The first argument to interceptors.response.use is the success
+      // pass-through. Verify it returns the response as-is.
+      // The mock factory is recreated on each module import; capture the
+      // call args from the latest call to apiClient's create().
+      // Re-import the client module to get a fresh interceptors capture.
+      // The mock already provides apiClient.interceptors.response.use
+      // as a vi.fn; we read it from the most recent call.
+      // Since the module is already loaded, the interceptors were set
+      // up at import time. We can capture them by re-reading the
+      // singleton. Simplest: clear the mock, re-import.
+      vi.resetModules();
+      mockGet.mockReset();
+      mockPost.mockReset();
+      mockCreate.mockClear();
+      await import('./client');
+      // After the re-import, mockCreate was called once, and the
+      // resulting object's interceptors.response.use was invoked once.
+      const lastInstance = mockCreate.mock.results[mockCreate.mock.results.length - 1].value;
+      const successHandler = lastInstance.interceptors.response.use.mock.calls[0][0];
+      const response = { data: { ok: true }, status: 200, headers: {} };
+      expect(successHandler(response)).toBe(response);
+      vi.resetModules();
+    });
+
+    it('extracts the FastAPI detail field and rejects with an Error', async () => {
+      vi.resetModules();
+      mockCreate.mockClear();
+      await import('./client');
+      const lastInstance = mockCreate.mock.results[mockCreate.mock.results.length - 1].value;
+      const errorHandler = lastInstance.interceptors.response.use.mock.calls[0][1];
+
+      // Build an Axios-shaped error with a FastAPI 422 response
+      const err = {
+        response: { data: { detail: 'Only PDF files are accepted' } },
+        message: 'Request failed with status code 422',
+      };
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(errorHandler(err)).rejects.toThrow('Only PDF files are accepted');
+        expect(spy).toHaveBeenCalledWith('[API Error]', 'Only PDF files are accepted');
+      } finally {
+        spy.mockRestore();
+        vi.resetModules();
+      }
+    });
+
+    it('falls back to error.message when no detail is present', async () => {
+      vi.resetModules();
+      mockCreate.mockClear();
+      await import('./client');
+      const lastInstance = mockCreate.mock.results[mockCreate.mock.results.length - 1].value;
+      const errorHandler = lastInstance.interceptors.response.use.mock.calls[0][1];
+
+      const err = { message: 'Network Error' };
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(errorHandler(err)).rejects.toThrow('Network Error');
+        expect(spy).toHaveBeenCalledWith('[API Error]', 'Network Error');
+      } finally {
+        spy.mockRestore();
+        vi.resetModules();
+      }
+    });
+
+    it('falls back to a generic message when neither detail nor message is present', async () => {
+      vi.resetModules();
+      mockCreate.mockClear();
+      await import('./client');
+      const lastInstance = mockCreate.mock.results[mockCreate.mock.results.length - 1].value;
+      const errorHandler = lastInstance.interceptors.response.use.mock.calls[0][1];
+
+      const err = {};
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(errorHandler(err)).rejects.toThrow('Unknown error');
+        expect(spy).toHaveBeenCalledWith('[API Error]', 'Unknown error');
+      } finally {
+        spy.mockRestore();
+        vi.resetModules();
+      }
+    });
+  });
+
+  describe('uploadResume', () => {
+    it('POSTs multipart/form-data to /upload and returns the parsed data', async () => {
+      const { uploadResume } = await import('./client');
+      const parsed = {
+        candidate_id: 'c1',
+        parsed: { id: 'c1', name: 'Alice', years_experience: 5, skills: [], education: [], experience: [], certifications: [] },
+        pdf_path: 'uploads/c1.pdf',
+      };
+      mockPost.mockResolvedValueOnce({ data: parsed });
+
+      const file = new File(['pdf bytes'], 'resume.pdf', { type: 'application/pdf' });
+      const result = await uploadResume(file);
+
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      const [url, body, config] = mockPost.mock.calls[0];
+      expect(url).toBe('/upload');
+      expect(body).toBeInstanceOf(FormData);
+      // The FormData contains the file under the 'file' key
+      expect((body as FormData).get('file')).toBe(file);
+      expect(config.headers['Content-Type']).toBe('multipart/form-data');
+      expect(config.onUploadProgress).toBeTypeOf('function');
+      expect(result).toEqual(parsed);
+    });
+
+    it('invokes the onProgress callback with percentage when total is set', async () => {
+      const { uploadResume } = await import('./client');
+      mockPost.mockImplementationOnce((_url, _body, config) => {
+        // Simulate the onUploadProgress callback the way axios would
+        config.onUploadProgress({ loaded: 50, total: 100 });
+        config.onUploadProgress({ loaded: 75, total: 100 });
+        return Promise.resolve({ data: { candidate_id: 'c1', parsed: {} as never, pdf_path: 'p' } });
+      });
+
+      const file = new File(['x'], 'a.pdf', { type: 'application/pdf' });
+      const progress: Array<{ loaded: number; total: number; percentage: number }> = [];
+      await uploadResume(file, (p) => progress.push(p));
+
+      expect(progress).toEqual([
+        { loaded: 50, total: 100, percentage: 50 },
+        { loaded: 75, total: 100, percentage: 75 },
+      ]);
+    });
+
+    it('skips progress callbacks when total is zero (unknown size)', async () => {
+      const { uploadResume } = await import('./client');
+      mockPost.mockImplementationOnce((_url, _body, config) => {
+        // Some servers don't send Content-Length; total is 0/undefined.
+        config.onUploadProgress({ loaded: 50, total: 0 });
+        return Promise.resolve({ data: { candidate_id: 'c1', parsed: {} as never, pdf_path: 'p' } });
+      });
+
+      const file = new File(['x'], 'a.pdf', { type: 'application/pdf' });
+      const progress: unknown[] = [];
+      await uploadResume(file, (p) => progress.push(p));
+
+      // Callback should not have fired because total was falsy
+      expect(progress).toEqual([]);
     });
   });
 });
