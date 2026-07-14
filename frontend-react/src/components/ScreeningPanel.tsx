@@ -32,6 +32,7 @@ import type {
   SubmitAnswerResponse,
   GetScreeningResultResponse,
 } from '../generated/screening';
+import { formatScreeningStatus } from './screeningStatus';
 
 interface ScreeningPanelProps {
   candidateId: string;
@@ -51,6 +52,7 @@ type ScreenState =
   | { phase: 'submitting'; screeningId: string; questionId: string; text: string; questionNumber: number; totalQuestions: number }
   | { phase: 'assessing'; screeningId: string; message: string }
   | { phase: 'complete'; screeningId: string; result: GetScreeningResultResponse };
+
 
 const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
   candidateId,
@@ -218,7 +220,7 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
     const { result } = state;
     const draft = result.emailDraft;
     const summary = result.summary;
-    const isRejected = summary?.status === 'REJECTED';
+    const isRejected = summary?.status === 'rejected';
 
     return (
       <Paper elevation={1} sx={{ p: 3 }}>
@@ -230,14 +232,9 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
         {summary && (
           <Box sx={{ mb: 2 }}>
             <Chip
-              label={`${summary.totalQuestionsAsked} questions answered`}
+              label={formatScreeningStatus(summary.status)}
               size="small"
-              sx={{ mr: 1 }}
-            />
-            <Chip
-              label={`Status: ${summary.status}`}
-              size="small"
-              color={isRejected ? 'error' : summary.sufficientEvidence ? 'success' : 'warning'}
+              color={isRejected ? 'error' : 'success'}
             />
             {summary.finalAssessment && (
               <Typography variant="body2" sx={{ mt: 1 }}>

@@ -3,6 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../test/test-utils';
 import ScreeningPanel from './ScreeningPanel';
+import { formatScreeningStatus } from './screeningStatus';
 import type {
   StartScreeningResponse,
   SubmitAnswerResponse,
@@ -118,7 +119,7 @@ const finalResult: GetScreeningResultResponse = {
     screeningId: 'screen-1',
     candidateId: 'c1',
     jobId: 'j1',
-    status: 'COMPLETE',
+    status: 'complete',
     totalQuestionsAsked: 3,
     averageAnswerQuality: 0.85,
     finalAssessment: 'Strong candidate for the role',
@@ -347,8 +348,7 @@ describe('ScreeningPanel', () => {
       expect(screen.getByText('Screening Complete')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('3 questions answered')).toBeInTheDocument();
-    expect(screen.getByText(/Status: COMPLETE/)).toBeInTheDocument();
+    expect(screen.getByText('Screening Passed')).toBeInTheDocument();
     expect(screen.getByText(/Strong candidate for the role/i)).toBeInTheDocument();
   });
 
@@ -674,7 +674,7 @@ describe('ScreeningPanel', () => {
       ...finalResult,
       summary: {
         ...finalResult.summary!,
-        status: 'REJECTED',
+        status: 'rejected',
         sufficientEvidence: false,
         finalAssessment: 'Unfortunately, your experience does not align with this role.',
       },
@@ -701,5 +701,32 @@ describe('ScreeningPanel', () => {
     expect(screen.getByRole('button', { name: /Back to Chat/i })).toBeInTheDocument();
     // Rejection feedback should be visible
     expect(screen.getByText(/does not align/)).toBeInTheDocument();
+  });
+});
+
+describe('formatScreeningStatus', () => {
+  it('returns Screening Passed for complete status', () => {
+    expect(formatScreeningStatus('complete')).toBe('Screening Passed');
+  });
+
+  it('returns Screening Passed for early_termination (with sufficient evidence)', () => {
+    expect(formatScreeningStatus('early_termination')).toBe('Screening Passed');
+  });
+
+  it('returns Screening Passed for early_termination (no sufficient evidence)', () => {
+    // The orchestrator only sets EARLY_TERMINATION via SKIP_TO_EMAIL, which
+    // also sets sufficient_evidence=True. The defensive mapping still places
+    // this on the "passed" side so a candidate never sees "Failed" for a
+    // session the LLM chose to end.
+    expect(formatScreeningStatus('early_termination')).toBe('Screening Passed');
+  });
+
+  it('returns Screening Failed for rejected status', () => {
+    expect(formatScreeningStatus('rejected')).toBe('Screening Failed');
+  });
+
+  it('returns In Progress for unknown status', () => {
+    expect(formatScreeningStatus('in_progress')).toBe('In Progress');
+    expect(formatScreeningStatus(undefined)).toBe('In Progress');
   });
 });
