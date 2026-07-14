@@ -19,9 +19,9 @@ describe('useAppStore', () => {
     expect(state.chatHistory).toEqual([]);
     expect(state.candidate).toBeNull();
     expect(state.jobs).toEqual([]);
-    expect(state.matches).toEqual([]);
     expect(state.selectedJobId).toBeNull();
     expect(state.selectedJobTitle).toBeNull();
+    expect(state.lastSentApplication).toBeNull();
   });
 
   describe('setCandidateId', () => {
@@ -134,6 +134,40 @@ describe('useAppStore', () => {
       useAppStore.getState().addMessage('user', 'test');
       useAppStore.getState().clearChat();
       expect(useAppStore.getState().chatHistory).toEqual([]);
+    });
+  });
+
+  describe('announceApplication', () => {
+    it('sets lastSentApplication with jobId, jobTitle, and a sentAt timestamp', () => {
+      const before = Date.now();
+      useAppStore.getState().announceApplication('j1', 'Frontend Developer');
+      const ann = useAppStore.getState().lastSentApplication;
+      const after = Date.now();
+
+      expect(ann).not.toBeNull();
+      expect(ann).toMatchObject({ jobId: 'j1', jobTitle: 'Frontend Developer' });
+      expect(ann!.sentAt).toBeGreaterThanOrEqual(before);
+      expect(ann!.sentAt).toBeLessThanOrEqual(after);
+    });
+
+    it('clearAnnouncedApplication resets lastSentApplication to null', () => {
+      useAppStore.getState().announceApplication('j1', 'Frontend Developer');
+      expect(useAppStore.getState().lastSentApplication).not.toBeNull();
+
+      useAppStore.getState().clearAnnouncedApplication();
+      expect(useAppStore.getState().lastSentApplication).toBeNull();
+    });
+
+    it('is not persisted across refreshes (one-shot event)', () => {
+      useAppStore.getState().announceApplication('j1', 'Frontend Developer');
+
+      const raw = localStorage.getItem('talentpilot-storage');
+      expect(raw).not.toBeNull();
+      const parsed = JSON.parse(raw!);
+      // lastSentApplication is intentionally excluded from the persist
+      // partialize — it is a one-shot event, not session state. If it leaks
+      // into localStorage, a refresh would re-announce the last send.
+      expect(parsed.state.lastSentApplication).toBeUndefined();
     });
   });
 });

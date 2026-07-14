@@ -28,6 +28,14 @@ interface AppState {
   selectedJobId: string | null;
   selectedJobTitle: string | null;
   setSelectedJob: (jobId: string | null, jobTitle?: string | null) => void;
+
+  // One-shot event: an application was just successfully sent. ChatInterface
+  // consumes this on mount, posts a confirmation message, and clears it so
+  // remounts don't re-fire the announcement.
+  lastSentApplication: { jobId: string; jobTitle: string; sentAt: number } | null;
+  announceApplication: (jobId: string, jobTitle: string) => void;
+  clearAnnouncedApplication: () => void;
+
   // Actions
   reset: () => void;
 }
@@ -42,6 +50,7 @@ const initialState = {
   matches: [],
   selectedJobId: null,
   selectedJobTitle: null,
+  lastSentApplication: null,
 };
 
 export const useAppStore = create<AppState>()(
@@ -77,6 +86,11 @@ export const useAppStore = create<AppState>()(
       setMatches: (matches) => set({ matches }),
 
       setSelectedJob: (jobId, jobTitle = null) => set({ selectedJobId: jobId, selectedJobTitle: jobTitle }),
+
+      announceApplication: (jobId, jobTitle) =>
+        set({ lastSentApplication: { jobId, jobTitle, sentAt: Date.now() } }),
+
+      clearAnnouncedApplication: () => set({ lastSentApplication: null }),
 
       reset: () => {
         set(initialState);

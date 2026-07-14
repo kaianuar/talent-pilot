@@ -42,6 +42,8 @@ const mockStore: Record<string, unknown> = {
   addMessage: vi.fn(),
   clearChat: vi.fn(),
   setCandidate: vi.fn(),
+  lastSentApplication: null,
+  clearAnnouncedApplication: vi.fn(),
 };
 
 vi.mock('../store', () => ({
@@ -66,6 +68,7 @@ describe('ChatInterface', () => {
     mockStore.selectedJobId = null;
     mockStore.selectedJobTitle = null;
     mockStore.matches = [];
+    mockStore.lastSentApplication = null;
   });
 
   it('renders the welcome message', () => {
@@ -435,5 +438,42 @@ describe('ChatInterface', () => {
         screen.getByText(/Failed to send application/i)
       ).toBeInTheDocument();
     });
+  });
+
+  it('announces a successful application when lastSentApplication is set', async () => {
+    // Stash an announcement in the store BEFORE rendering, as ScreeningPanel
+    // does right before unmounting. The ChatInterface mount effect should
+    // pick it up, post a confirmation message, and clear the field.
+    mockStore.lastSentApplication = {
+      jobId: 'j1',
+      jobTitle: 'Frontend Developer',
+      sentAt: Date.now(),
+    };
+
+    renderWithProviders(<ChatInterface candidateId="c1" />);
+
+    // Confirmation message references the job title and asks about a
+    // different job. The user can then click another job in the sidebar.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/has been sent to the recruiter/i)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/different job/i)
+      ).toBeInTheDocument();
+    });
+
+    // The effect must clear the announcement so a remount (e.g. switching
+    // tabs and back) does not re-fire the same message.
+    expect(mockStore.clearAnnouncedApplication).toHaveBeenCalled();
+  });
+
+  it('does not announce anything when lastSentApplication is null', () => {
+    renderWithProviders(<ChatInterface candidateId="c1" />);
+
+    // Only the default welcome message should be present; no
+    // "has been sent" copy.
+    expect(screen.queryByText(/has been sent to the recruiter/i)).toBeNull();
+    expect(mockStore.clearAnnouncedApplication).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,7 @@ import {
 } from '../api/grpcClient';
 import { useScreeningProgress } from '../api/useScreeningProgress';
 import { useSubmitApplication } from '../api/hooks';
+import { useAppStore } from '../store';
 import type {
   StartScreeningResponse,
   SubmitAnswerResponse,
@@ -66,6 +67,7 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'error'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
   const submitApplication = useSubmitApplication();
+  const announceApplication = useAppStore((s) => s.announceApplication);
 
   const screeningId = state.phase !== 'idle' && state.phase !== 'starting' && state.phase !== 'error'
     ? state.screeningId
@@ -182,14 +184,17 @@ const ScreeningPanel: React.FC<ScreeningPanelProps> = ({
         matchTier,
       });
       setSendStatus('idle');
+      // Stash a one-shot event in the store so ChatInterface, which is about
+      // to mount as this panel unmounts, can post a confirmation message and
+      // ask about a different job. The ChatInterface effect consumes it and
+      // clears it, so the announcement does not re-fire on remounts.
+      announceApplication(jobId, jobTitle);
       onComplete?.(result);
     } catch (err) {
       setSendStatus('error');
       setSendError(err instanceof Error ? err.message : 'Failed to send application. Please try again.');
     }
-  }, [candidateId, jobId, matchScore, matchTier, onComplete, submitApplication]);
-
-  // --- Render by phase ---
+  }, [candidateId, jobId, jobTitle, matchScore, matchTier, onComplete, submitApplication, announceApplication]);
 
   if (state.phase === 'idle' || state.phase === 'starting') {
     return (

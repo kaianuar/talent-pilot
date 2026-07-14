@@ -13,6 +13,8 @@ import type {
 const mockStartScreening = vi.fn();
 const mockSubmitAnswer = vi.fn();
 const mockGetScreeningResult = vi.fn();
+const mockAnnounceApplication = vi.fn();
+const mockClearAnnouncedApplication = vi.fn();
 let submitApplicationError: Error | null = null;
 let submitApplicationPending = false;
 
@@ -34,6 +36,14 @@ vi.mock('../api/hooks', () => ({
     };
     return { mutateAsync: impl, isPending: submitApplicationPending, isError: !!submitApplicationError };
   },
+}));
+
+vi.mock('../store', () => ({
+  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({
+      announceApplication: mockAnnounceApplication,
+      clearAnnouncedApplication: mockClearAnnouncedApplication,
+    }),
 }));
 
 const successStartResponse: StartScreeningResponse = {
@@ -424,6 +434,39 @@ describe('ScreeningPanel', () => {
     await waitFor(() => {
       expect(defaultProps.onComplete).toHaveBeenCalledWith(finalResult);
     });
+
+    // The panel also announces the application to the chat by stashing
+    // {jobId, jobTitle} in the store. ChatInterface consumes the announcement
+    // on mount and posts a confirmation message. Pin the call here so a
+    // regression that drops the announcement (and the chat goes back to
+    // its default state with no record of the send) is caught.
+    expect(mockAnnounceApplication).toHaveBeenCalledWith('j1', 'Frontend Developer');
+  });
+
+  it('does NOT announce the application when send fails', async () => {
+    mockSubmitAnswer.mockResolvedValue(submitAnswerCompleteResponse);
+    submitApplicationError = new Error('Email service unavailable');
+
+    renderWithProviders(<ScreeningPanel {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Type your answer...')).toBeInTheDocument();
+    });
+
+    await fillAndSubmitAnswer(user, 'Answer');
+
+    await waitFor(() => {
+      expect(screen.getByText('Screening Complete')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Send to Recruiter/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Email service unavailable')).toBeInTheDocument();
+    });
+
+    // A failed send must not announce success to the chat.
+    expect(mockAnnounceApplication).not.toHaveBeenCalled();
   });
 
   it('surfaces an inline error and keeps the panel mounted when send fails', async () => {

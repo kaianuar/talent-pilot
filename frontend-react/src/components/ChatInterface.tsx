@@ -67,10 +67,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const chatMutation = useChat();
   const uploadMutation = useUploadResume();
   const submitMutation = useSubmitApplication();
-
   const selectedJobId = useAppStore((s) => s.selectedJobId);
   const selectedJobTitle = useAppStore((s) => s.selectedJobTitle);
   const matches = useAppStore((s) => s.matches);
+  const lastSentApplication = useAppStore((s) => s.lastSentApplication);
+  const clearAnnouncedApplication = useAppStore((s) => s.clearAnnouncedApplication);
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -78,6 +79,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Consume the one-shot application announcement from the store. When the
+  // ScreeningPanel successfully sends an application, it stashes {jobId,
+  // jobTitle} in lastSentApplication just before unmounting. This effect
+  // fires once on mount (or after the value changes), appends a system
+  // message to the chat, and clears the field so the announcement does
+  // not re-fire on subsequent re-renders or remounts.
+  useEffect(() => {
+    if (!lastSentApplication) return;
+    const { jobTitle } = lastSentApplication;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `Your application for **${jobTitle}** has been sent to the recruiter. Would you like to start screening for a different job?`,
+        timestamp: new Date(),
+      },
+    ]);
+    clearAnnouncedApplication();
+  }, [lastSentApplication, clearAnnouncedApplication]);
 
   // Sync messages to persisted store (survives component unmount)
   useEffect(() => {
