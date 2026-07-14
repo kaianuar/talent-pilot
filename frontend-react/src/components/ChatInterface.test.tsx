@@ -468,6 +468,25 @@ describe('ChatInterface', () => {
     expect(mockStore.clearAnnouncedApplication).toHaveBeenCalled();
   });
 
+  it('posts the application confirmation exactly once', async () => {
+    // Regression: a duplicate copy of the same message was being posted
+    // by the announcement effect. Pin the count to 1 so the next regression
+    // is caught.
+    mockStore.lastSentApplication = {
+      jobId: 'j1',
+      jobTitle: 'Senior Backend Engineer',
+      sentAt: Date.now(),
+    };
+
+    renderWithProviders(<ChatInterface candidateId="c1" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/has been sent to the recruiter/i)
+      ).toHaveLength(1);
+    });
+  });
+
   it('does not announce anything when lastSentApplication is null', () => {
     renderWithProviders(<ChatInterface candidateId="c1" />);
 

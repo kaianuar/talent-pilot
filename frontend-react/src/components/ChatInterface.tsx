@@ -63,6 +63,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [showSendButton, setShowSendButton] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Tracks the last application announcement that this component instance
+  // has already posted. Without this, React 18 StrictMode can cause the
+  // effect below to fire twice in dev, leading to the same confirmation
+  // message appearing twice in the chat.
+  const announcedRef = useRef<number | null>(null);
 
   const chatMutation = useChat();
   const uploadMutation = useUploadResume();
@@ -88,6 +93,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // not re-fire on subsequent re-renders or remounts.
   useEffect(() => {
     if (!lastSentApplication) return;
+    // Guard against double-posting. The effect can fire more than once for
+    // a single send (StrictMode dev-mode replay, re-render between the
+    // setMessages call and the clearAnnouncedApplication commit). The
+    // sentAt timestamp is unique per announcement, so checking it through
+    // the ref catches every duplicate.
+    if (announcedRef.current === lastSentApplication.sentAt) return;
+    announcedRef.current = lastSentApplication.sentAt;
     const { jobTitle } = lastSentApplication;
     setMessages((prev) => [
       ...prev,
