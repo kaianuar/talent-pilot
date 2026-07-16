@@ -4,7 +4,12 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const WS_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:9000').replace(/^http/, 'ws');
+// WebSocket needs an absolute URL. Use the VITE_API_URL if set (dev),
+// otherwise build a same-origin ws:// URL from window.location.
+const _configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+const WS_BASE = _configured
+  ? _configured.replace(/^http/, 'ws')
+  : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
 
 export interface ScreeningProgress {
   screeningId: string;

@@ -1,7 +1,7 @@
 import axios, { type AxiosInstance, type AxiosProgressEvent } from 'axios';
 import { AxiosError } from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:9000';
+const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || '';
 
 export interface Candidate {
   id: string;

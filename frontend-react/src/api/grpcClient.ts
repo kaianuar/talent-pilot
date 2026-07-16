@@ -12,7 +12,7 @@ import type {
   ScreeningProgressUpdate,
 } from '../generated/screening';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:9000';
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || "";
 
 // Create gRPC-Web transport pointing to the backend proxy
 const transport = new GrpcWebFetchTransport({
