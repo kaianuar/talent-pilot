@@ -29,6 +29,11 @@ from backend.services import (
     create_application,
     update_application,
 )
+from backend.services.match_cache import (
+    compute_resume_hash,
+    get_cached_reasoning,
+    cache_reasoning,
+)
 from backend.services.resume_parser import parse_resume_from_file, ResumeParseError
 from backend.services.email import send_email, EmailSendError
 
@@ -368,7 +373,11 @@ def _compute_match(
 
     # Experience score
     exp_years = candidate_years or 0
-    experience_score = min(exp_years / 10.0, 1.0)
+    # Spec: min(1.0, candidate.years_experience / job.min_years).
+    # Fall back to /1.0 (anything > 0 caps at 1.0) when min_years is
+    # missing or zero so jobs with no experience floor still score.
+    divisor = job.get("min_years") or 1
+    experience_score = min(exp_years / divisor, 1.0)
 
     # LLM reasoning score (from batch call)
     reasoning_info = (llm_reasoning or {}).get(job["id"], {})
@@ -432,8 +441,16 @@ async def match_candidate(req: MatchRequest):
     preliminary.sort(key=lambda m: m["match_score"], reverse=True)
     top_jobs = [j for j, m in zip(jobs, preliminary) if m["match_score"] >= SCORE_WEAK][:10]
 
-    # Single LLM call for top job ratings only
-    llm_reasoning = _batch_llm_reasoning(skills, years, top_jobs) if top_jobs else {}
+    # Cache lookup: skip the LLM for jobs we already have a score for.
+    # Different resume_hash -> different cache row -> no hit, forcing a
+    # re-rating when the candidate re-uploads a CV.
+    resume_hash = compute_resume_hash(parsed)
+    cached = get_cached_reasoning(req.candidate_id, resume_hash, [j["id"] for j in top_jobs]) if top_jobs else {}
+    missing = [j for j in top_jobs if j["id"] not in cached]
+    fresh = _batch_llm_reasoning(skills, years, missing) if missing else {}
+    for job_id, info in fresh.items():
+        cache_reasoning(req.candidate_id, resume_hash, job_id, info["score"], info.get("explanation", ""))
+    llm_reasoning = {**cached, **fresh}
 
     matches = [_compute_match(skills, years, j, llm_reasoning) for j in jobs]
 

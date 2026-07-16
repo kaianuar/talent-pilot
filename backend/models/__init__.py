@@ -2,6 +2,7 @@ from backend.models.job import Job
 from backend.models.candidate import Candidate, ParsedResume
 from backend.models.application import Application
 from backend.models.audit_log import AuditLogEntry
+from backend.models.match_cache import MatchCache
 
 __all__ = [
     "Job",
@@ -9,4 +10,5 @@ __all__ = [
     "ParsedResume",
     "Application",
     "AuditLogEntry",
+    "MatchCache",
 ]

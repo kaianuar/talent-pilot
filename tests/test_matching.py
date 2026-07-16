@@ -117,8 +117,11 @@ def test_experience_score_zero_years():
 
 
 def test_experience_score_mid_range():
-    """5 years → experience_score = 0.5."""
-    job = _job(required=["Python"])
+    """5 years with min_years=10 → experience_score = 0.5.
+
+    Verifies the spec formula: experience_score = min(1.0, years / min_years).
+    """
+    job = _job(required=["Python"], min_years=10)
     result = _compute_match(["Python"], 5.0, job)
 
     assert result["experience_score"] == 0.5
@@ -130,6 +133,36 @@ def test_experience_score_none_treated_as_zero():
     result = _compute_match(["Python"], None, job)
 
     assert result["experience_score"] == 0.0
+
+
+def test_experience_score_uses_job_min_years():
+    """Spec formula: experience_score = min(1.0, years / min_years).
+
+    Regression: app.py:371 used a hardcoded /10.0 divisor, ignoring
+    job.min_years. A candidate meeting the floor (years == min_years)
+    must get experience_score = 1.0, not 0.5.
+    """
+    job = _job(required=["Python"], min_years=5)
+    result = _compute_match(["Python"], 5.0, job)
+
+    assert result["experience_score"] == 1.0
+
+
+def test_experience_score_below_min_years():
+    """Candidate under the experience floor gets a partial score."""
+    job = _job(required=["Python"], min_years=10)
+    result = _compute_match(["Python"], 4.0, job)
+
+    # min(1.0, 4 / 10) = 0.4
+    assert result["experience_score"] == 0.4
+
+
+def test_experience_score_above_min_years_caps_at_one():
+    """15 years with min_years=4 -> experience_score = 1.0 (cap)."""
+    job = _job(required=["Python"], min_years=4)
+    result = _compute_match(["Python"], 15.0, job)
+
+    assert result["experience_score"] == 1.0
 
 
 # ============================================================================
@@ -159,7 +192,8 @@ def test_tier_no_match():
 def test_tier_partial_match():
     """Medium score → PARTIAL_MATCH tier."""
     # With 4-weight formula (no LLM): composite = 0.35*1.0 + 0.20*1.0 + 0.20*0.5 = 0.65
-    job = _job(required=["Python"], preferred=["Docker"])
+    # min_years=10 with 5 years experience gives experience_score=0.5.
+    job = _job(required=["Python"], preferred=["Docker"], min_years=10)
     result = _compute_match(["Python", "Docker"], 5.0, job)
 
     assert result["tier"] == "PARTIAL_MATCH"
@@ -366,3 +400,89 @@ def test_batch_llm_reasoning_empty_jobs():
 
     result = _batch_llm_reasoning(["Python"], 5.0, [])
     assert result == {}
+
+
+# ============================================================================
+# Match cache (LLM reasoning memoization)
+# ============================================================================
+
+
+def test_cache_round_trip(tmp_path):
+    """Cache miss writes, second lookup returns the same score."""
+    from backend.db import init_db
+    from backend.services.match_cache import (
+        compute_resume_hash,
+        get_cached_reasoning,
+        cache_reasoning,
+    )
+
+    init_db(tmp_path / "cache_test.db")
+
+    parsed = {"skills": [{"name": "Python"}], "years_experience": 5}
+    h = compute_resume_hash(parsed)
+
+    # First call: cache miss -> empty dict
+    assert get_cached_reasoning("c1", h, ["j1"]) == {}
+
+    # Write
+    cache_reasoning("c1", h, "j1", 0.85, "Strong fit")
+
+    # Second call: cache hit
+    hit = get_cached_reasoning("c1", h, ["j1"])
+    assert hit == {"j1": {"score": 0.85, "explanation": "Strong fit"}}
+
+
+def test_cache_invalidated_by_resume_change(tmp_path):
+    """Different resume_hash -> different cache row -> no hit."""
+    from backend.db import init_db
+    from backend.services.match_cache import (
+        compute_resume_hash,
+        get_cached_reasoning,
+        cache_reasoning,
+    )
+
+    init_db(tmp_path / "cache_test2.db")
+
+    parsed_v1 = {"skills": [{"name": "Python"}], "years_experience": 5}
+    parsed_v2 = {"skills": [{"name": "Python"}, {"name": "Go"}], "years_experience": 5}
+    h1 = compute_resume_hash(parsed_v1)
+    h2 = compute_resume_hash(parsed_v2)
+
+    cache_reasoning("c1", h1, "j1", 0.85, "OK")
+
+    # Same job, same candidate, but new resume -> miss
+    assert get_cached_reasoning("c1", h2, ["j1"]) == {}
+    # Old hash still resolves
+    assert "j1" in get_cached_reasoning("c1", h1, ["j1"])
+
+
+def test_cache_partial_hits(tmp_path):
+    """Cache returns hits for some jobs, caller falls through to LLM for the rest."""
+    from backend.db import init_db
+    from backend.services.match_cache import (
+        get_cached_reasoning,
+        cache_reasoning,
+    )
+
+    init_db(tmp_path / "cache_test3.db")
+
+    h = "fixed-hash"
+    cache_reasoning("c1", h, "j1", 0.9, "cached")
+    # j2 not cached
+    hit = get_cached_reasoning("c1", h, ["j1", "j2"])
+
+    assert "j1" in hit
+    assert "j2" not in hit
+    assert hit["j1"]["score"] == 0.9
+
+
+def test_compute_resume_hash_is_stable():
+    """Same input -> same hash; reordered keys -> same hash (sort_keys=True)."""
+    from backend.services.match_cache import compute_resume_hash
+
+    a = compute_resume_hash({"a": 1, "b": 2, "c": 3})
+    b = compute_resume_hash({"c": 3, "b": 2, "a": 1})
+    c = compute_resume_hash({"a": 1, "b": 2, "c": 4})
+
+    assert a == b
+    assert a != c
