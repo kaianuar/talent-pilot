@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  # ------------------------------------------------------------------
+  # Backend: install deps, run pytest
+  # ------------------------------------------------------------------
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt pytest pytest-asyncio
+
+      - name: Run backend tests
+        env:
+          QWEN_API_KEY: "sk-dummy-for-ci"
+          QWEN_BASE_URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        run: pytest tests/ -q
+
+  # ------------------------------------------------------------------
+  # Frontend: install, lint, build, test
+  # ------------------------------------------------------------------
+  frontend:
+    name: Frontend lint + build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-react/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend-react
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend-react
+        run: npm run lint
+
+      - name: Build
+        working-directory: frontend-react
+        run: npm run build
+
+      - name: Test
+        working-directory: frontend-react
+        run: npx vitest run
+
+  # ------------------------------------------------------------------
+  # Build and push the Docker image to ACR.
+  #
+  # Triggered manually via the "Run workflow" button in the GitHub UI,
+  # or as a dependency of deploy jobs. Tests must pass first.
+  #
+  # Required secrets (configure at
+  #   https://github.com/<owner>/<repo>/settings/secrets/actions):
+  #   - ACR_REGISTRY   e.g. registry.ap-southeast-1.cr.aliyuncs.com
+  #   - ACR_USERNAME   your aliyun account
+  #   - ACR_PASSWORD   temporary token from `aliyun cr get-authorization-token`
+  #
+  # Optional:
+  #   - ACR_NAMESPACE  defaults to "talentpilot"
+  # ------------------------------------------------------------------
+  docker:
+    name: Build & push Docker image to ACR
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+            [ -z "$TAG" ] && TAG="latest"
+          else
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Using tag: $TAG"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE || 'talentpilot' }}/talentpilot:${{ steps.tag.outputs.tag }}
+            ${{ secrets.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE || 'talentpilot' }}/talentpilot:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
