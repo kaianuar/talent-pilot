@@ -1,19 +1,18 @@
-import React, { type ReactElement } from 'react';
-import { render, type RenderOptions } from '@testing-library/react';
+/**
+ * Test wrapper providers.
+ *
+ * Kept in a .tsx file because it returns JSX. Helper functions
+ * live in test-helpers.ts (which is .ts, not .tsx, so the
+ * only-export-components rule doesn't apply there).
+ */
+import { type ReactNode } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import theme from '../theme';
 
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: 0 },
-      mutations: { retry: false },
-    },
-  });
-}
+import { createTestQueryClient } from './test-helpers';
 
-function AllProviders({ children }: { children: React.ReactNode }) {
+export function AllProviders({ children }: { children: ReactNode }) {
   const queryClient = createTestQueryClient();
   return (
     <ThemeProvider theme={theme}>
@@ -21,9 +20,3 @@ function AllProviders({ children }: { children: React.ReactNode }) {
     </ThemeProvider>
   );
 }
-
-function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
-  return render(ui, { wrapper: AllProviders, ...options });
-}
-
-export { renderWithProviders, createTestQueryClient, AllProviders };

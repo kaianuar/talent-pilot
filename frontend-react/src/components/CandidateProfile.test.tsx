@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
-import { renderWithProviders } from '../test/test-utils';
+import { renderWithProviders } from '../test/test-helpers';
 import CandidateProfile from './CandidateProfile';
 import type { Candidate } from '../api/client';
 

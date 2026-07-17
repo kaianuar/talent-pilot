@@ -1,4 +1,4 @@
-import { Page, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 /**
  * Wait for the app to be fully loaded

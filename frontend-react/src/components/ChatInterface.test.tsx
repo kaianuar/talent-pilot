@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { renderWithProviders } from '../test/test-utils';
+import { renderWithProviders } from '../test/test-helpers';
 import ChatInterface from './ChatInterface';
 
 // Mutable mock state so individual tests can override
