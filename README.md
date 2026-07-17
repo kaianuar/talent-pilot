@@ -2,11 +2,8 @@
 
 [![CI](https://github.com/kaianuar/talent-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/kaianuar/talent-pilot/actions/workflows/ci.yml)
 
-> **Qwen Cloud Global AI Hackathon — Track 4: Autopilot Agent**
->
-> **Submission deadline: July 20, 2026, 2:00 PM PDT** (extended from July 9 per Devpost).
->
-> See the [submission checklist](#-submission-checklist) below for current status.
+> Originally built for the Qwen Cloud Global AI Hackathon (Track 4: Autopilot Agent).
+
 TalentPilot is an AI-powered recruiting assistant that automates the end-to-end initial candidate screening workflow. Candidates upload their CV through a chat interface, the agent parses it, matches against the company's curated job listings, asks targeted screening questions, and emails the recruiter — all with human-in-the-loop confirmation before sending.
 
 ## 🏗️ Architecture
@@ -206,17 +203,3 @@ pytest tests/test_websocket_routes.py -v   # WebSocket progress
 | gRPC / WebSocket | gRPC-Web proxy + WebSocket progress | — |
 | Deployment | Docker (multi-stage) → Alibaba Cloud FC | — |
 
-## 📋 Submission Checklist
-
-- [x] **Public GitHub repo** — [github.com/kaianuar/talent-pilot](https://github.com/kaianuar/talent-pilot) (MIT licensed).
-- [x] Code repo with open-source license (MIT, committed)
-- [x] Architecture diagram (`docs/architecture.mmd`)
-- [x] **CI** — GitHub Actions runs backend tests + frontend lint/build/test on every push; manual dispatch builds & pushes the Docker image to ACR (configure `ACR_REGISTRY` / `ACR_USERNAME` / `ACR_PASSWORD` secrets to enable)
-- [x] **Docker image** — built and end-to-end verified locally; image is 391 MB
-- [ ] **Alibaba Cloud deployment** — push image to ACR + provision Function Compute or ECS
-- [ ] **Demo video** (~3 min, YouTube/Vimeo, public) — script at `docs/DEMO_VIDEO_SCRIPT.md`
-- [ ] **Devpost submission form** — submit via the Devpost UI once the video and deployment URL are ready
-
-**Hard deadline: 2:00 PM PDT on July 20, 2026.**
-
-MIT License — see [LICENSE](LICENSE) for details.
